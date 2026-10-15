@@ -2,7 +2,7 @@
 
 **AI-assisted, policy-as-code authorization for REST APIs. Stops Broken Object Level Authorization (BOLA) with deterministic policies, adds an AI layer that can only tighten decisions, and turns admin decisions into new policy rules.**
 
-> Status: work in progress. Built for Black Hat Arsenal.
+> Status: work in progress.
 
 ---
 
