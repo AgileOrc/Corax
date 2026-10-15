@@ -18,7 +18,7 @@ Corax keeps **policy code as the source of truth** and uses AI only where it hel
 |---|---|---|
 | Policy code (OPA / Rego) | Final authority, deterministic | Yes |
 | AI risk check (per request) | Flags suspicious requests that passed policy | **No, it can only deny** |
-| AI rule suggestion (admin flow) | Finds similar cases when an admin changes access, proposes a rule | No, a human approves |
+| AI rule suggestion (admin flow) | Finds similar cases when an admin approves an appeal, writes a rule | Only through a validated, expiring rule; broad grants need a human |
 
 ---
 
@@ -42,27 +42,32 @@ Client ──► Envoy sidecar ──► authz-service ──► OPA (policy cod
 ### 2. Admin path (when an admin changes one decision)
 
 ```
-Admin approves an exception (e.g. lecturer Budi may read student Ani's personal data)
+Lecturer Budi (head of study program IF) is denied a student's grades, appeals, admin approves
    │
    ▼
-HGNN embeddings ──► nearest similar (user, object) pairs
+HGNN embeddings ──► nearest similar (lecturer, student) pairs that policy still denies
+   │                 (e.g. Sari, head of study program SI, and her students)
+   ▼
+Pattern miner ──► shared attributes/relations (e.g. position = head of program, same study program)
    │
    ▼
-Shared attributes/relations of those pairs (e.g. role = lecturer, relation = academic_advisor)
+Local LLMs draft a Rego rule (mixture of agents, majority vote)
    │
    ▼
-Draft Rego rule from a template ──► impact test on historical requests
-   │                                 ("changes 47 decisions for 14 users")
+Validation (opa check, attribute whitelist, opa test) ──► impact test on historical requests
+   │                                                      ("changes 47 decisions for 14 users")
    ▼
-Risk tier check (category-tree depth + number of affected users)
+Decision engine (category-tree depth, affected users, sensitivity, risk score of newly opened pairs)
    │
-   ├─ revoke / small scope  → applied automatically, with expiry, logged
-   └─ broad grant            → waits for admin approval
+   ├─ deep / small scope → applied automatically, with expiry, logged, revocable
+   └─ broad grant        → waits for admin approval
    ▼
-Rule written to policies/ ──► OPA reloads (--watch)
+Rule written to policies/generated/ ──► OPA reloads (--watch)
 ```
 
-**Risk tiers.** Users are grouped in a category tree (root → lecturer/student → faculty → advisor …). A proposed rule is scored by the **depth** of the lowest common category it covers and the **number of users** under it. Shallow, large scopes need approval; deep, small scopes can be applied automatically.
+**Risk tiers.** Users are grouped in a category tree (root → lecturer/student → faculty → study program → position). A proposed rule is scored by the **depth** of the lowest common category it covers and the **number of users** under it. Shallow, large scopes need approval; deep, small scopes are applied automatically with an expiry (7 days, or 24 hours for faculty-wide rules). The expiry is checked inside the Rego rule itself.
+
+The full AI design, including how it maps to the papers below, is in [docs/ai-design.md](docs/ai-design.md).
 
 ---
 
@@ -75,8 +80,9 @@ Rule written to policies/ ──► OPA reloads (--watch)
 | `authz-service` | Python, FastAPI | Core of the tool: policy call + AI check |
 | `policy-engine` | OPA (Rego) | Loads `policies/` with `--watch` |
 | `embedding-store` | Redis | HGNN embeddings |
-| `hgnn-job` | PyTorch Geometric (heterogeneous GraphSAGE) | Recomputes embeddings periodically |
-| `rule-suggester` | Python, scikit-learn | Nearest neighbours, shared attributes, Rego templates, impact test |
+| `hgnn-job` | PyTorch Geometric (heterogeneous GraphSAGE) | Recomputes embeddings periodically; reimplemented from Yin et al. 2024 |
+| `rule-suggester` | Python, scikit-learn | Nearest neighbours, pattern miner, validation, impact test, decision engine |
+| `llm` | Ollama (local models) | Writes Rego rules from mined patterns; reimplements Mai et al. 2025 |
 | `data-generator` | Python, Faker | Synthetic users, relations, category tree, labelled access logs |
 
 ---
@@ -96,8 +102,8 @@ The demo API is exposed through the sidecar at `http://localhost:8080`.
 # 1. BOLA attempt blocked by policy
 ./demo/01_bola_blocked.sh
 
-# 2. Enumeration that passes policy but is flagged by the AI layer
-./demo/02_enumeration_flagged.sh
+# 2. Over-broad rule lets a request through policy, AI risk check denies it
+./demo/02_broad_rule_caught.sh
 
 # 3. Admin exception -> similar cases -> proposed rule -> impact test
 ./demo/03_rule_suggestion.sh
@@ -117,6 +123,9 @@ The demo API is exposed through the sidecar at `http://localhost:8080`.
 | `AUTO_APPLY_MAX_USERS` | `5` | Max affected users for automatic grants |
 | `AUTO_APPLY_MIN_DEPTH` | `3` | Min category-tree depth for automatic grants |
 | `AUTO_RULE_EXPIRY_DAYS` | `7` | Auto-applied rules expire unless approved |
+| `AUTO_RULE_EXPIRY_BROAD_HOURS` | `24` | Expiry for auto-applied faculty-wide rules |
+| `OLLAMA_URL` | `http://host.docker.internal:11434` | Local LLM endpoint |
+| `LLM_MODELS` | `qwen2.5-coder:7b,llama3.1:8b` | Models used as rule generators (majority vote) |
 
 ---
 
@@ -129,7 +138,8 @@ The demo API is exposed through the sidecar at `http://localhost:8080`.
 ├── hgnn-job/          # embedding training/inference
 ├── rule-suggester/    # similar cases → Rego rules → impact test
 ├── data-generator/    # synthetic dataset
-├── policies/          # Rego policies (human-written + approved generated rules)
+├── policies/          # Rego policies (human-written + generated/ rules)
+├── docs/              # design documents
 ├── envoy.yaml
 └── docker-compose.yml
 ```
@@ -152,7 +162,7 @@ The demo API is exposed through the sidecar at `http://localhost:8080`.
 - Nobi et al., *Toward Deep Learning Based Access Control*, ACM CODASPY 2022
 - Nobi et al., *Administration of Machine Learning Based Access Control*, ESORICS 2022
 - You et al., *A knowledge graph empowered online learning framework for access control decision-making*, World Wide Web 2023
-- Yin et al., *A heterogeneous graph-based semi-supervised learning framework for access control decision-making*, World Wide Web 2024
+- Yin et al., *A heterogeneous graph-based semi-supervised learning framework for access control decision-making*, World Wide Web 2024 ([code](https://github.com/happyResearcher/ACHG-SSLF); Corax reimplements the method and does not copy code)
 - Zhang et al., *Robust Heterogeneous Graph Neural Networks against Adversarial Attacks*, AAAI 2022
 - Mai et al., *LLM-Based Fine-Grained ABAC Policy Generation*, ICISSP 2025
 
