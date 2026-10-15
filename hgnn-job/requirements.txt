@@ -1,0 +1,5 @@
+# torch is installed separately so the right CUDA build is picked, e.g.:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu128
+torch>=2.7
+torch_geometric>=2.6
+numpy>=1.26

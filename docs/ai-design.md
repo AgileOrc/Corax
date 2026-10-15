@@ -1,241 +1,251 @@
 # Corax AI design
 
-This document describes the two AI models in Corax, how they are used, and the guardrails around them.
+This document describes the AI parts of Corax, where they sit in the request path, and the guardrails around them.
 The models follow two papers as closely as possible; the parts that are new in Corax are marked as such.
 
 ## 1. Principles
 
 1. **Policy code is the source of truth.** Every allow decision comes from Rego evaluated by OPA.
-2. **The per-request AI can only deny.** It never turns a policy deny into an allow.
-3. **AI-generated rules can only add allows, never remove denies.** Explicit deny guards always win.
-4. **Every AI-generated rule expires, is logged, and can be revoked.**
+2. **The per-request AI can only deny.** OPA only asks the AI after the policy has already allowed the request.
+3. **AI-generated rules can only add allows, never remove denies.**
+4. **Every AI-generated rule is validated, logged, and can be revoked** (by deleting its file).
 
-## 2. Overview
+## 2. Architecture
+
+### 2.1 Request path (every request)
 
 ```
-                 ┌──────────── MODEL 1: HGNN (offline job) ────────────┐
-Campus graph ──► │ heterogeneous GraphSAGE → one embedding per node     │──► Redis
-                 └──────────────────────────────────────────────────────┘
-                           │                              │
-              Use A        ▼                              ▼        Use B
-     Risk classifier (every request)          Similar-case search (on admin appeal)
-     Random Forest, deny-only                 kNN → pattern miner (deterministic)
-                                                          │
-                                                          ▼
-                                       MODEL 2: local LLMs (Ollama)
-                                       pattern → Rego rule (mixture of agents)
-                                                          │
-                                                          ▼
-                              validation → impact test → decision engine
-                              (depth, affected users, sensitivity, risk score)
-                                                          │
-                                                          ▼
-                              policies/generated/*.rego (with expiry)
+Client ──► Envoy (PEP) ──► OPA (PDP, opa-envoy-plugin)
+                              │  1. verify JWT, parse path
+                              │  2. base policy
+                              │       deny  ──────────────────────────► 403
+                              │       allow ↓
+                              │  3. http.send ──► AI-Corax /risk
+                              │                     risk = 1 − σ(h_user · h_object)
+                              │  4. allow = base_allow AND NOT ai_high_risk
+                              ▼
+                    allow → Application        deny → 403
 ```
 
-One HGNN is trained once and its embeddings are used twice:
+- Identity comes only from a verified JWT; the object ID comes from the URL path. Both are handled in Rego.
+- AI-Corax is only called when the base policy allows the request, so it can never grant access.
+- If AI-Corax errors or times out, `ai_high_risk` is false and the policy decision stands. The event is logged.
+- If OPA is unreachable, Envoy denies everything (`failure_mode_allow: false`).
 
-| | Use A: risk check | Use B: similar cases |
-|---|---|---|
-| When | Every request that OPA allowed | When an admin approves an appeal |
-| How | Random Forest on pair embeddings → risk score | Nearest neighbours of the approved pair |
-| Output | risk > threshold → 403 | Shared attributes/relations → LLM |
+The deny-only rule is written explicitly in Rego, so it can be audited:
+
+```rego
+allow if {
+	base_allow
+	not ai_high_risk
+}
+```
+
+### 2.2 Appeal path (admin approves an exception)
+
+```
+Admin ──► Envoy ──► OPA (is the caller an admin?) ──► AI-Corax POST /appeals
+                                                          │
+  1. Apply an exact exception for the appellant only ─────┤ (immediately)
+  2. kNN: similar (user, object) pairs the policy still denies
+  3. Pattern miner: shared attributes/relations
+  4. Scope: affected users, changed decisions, category-tree depth
+  5. Tier ── small ─────────────────────────────┐
+          └─ large → wait for POST /appeals/{id}/confirm
+  6. LLMs write a Rego rule (mixture of agents, majority vote)
+  7. Validation (opa check, whitelist, opa test, equivalence with the approved pattern)
+  8. Write file to policies/generated/ ──► OPA reloads (--watch)
+  Every step is logged.
+```
+
+`POST /appeals` returns the mined pattern, its scope and tier, and a status (`applied` or `awaiting_confirmation`).
+Policy files are changed only on disk. OPA's REST API is never used for writes and is not exposed.
 
 ## 3. Model 1: HGNN
 
 Reimplemented from Yin et al. 2024 (reference code: [ACHG-SSLF](https://github.com/happyResearcher/ACHG-SSLF)).
 No code is copied from that repository (it is GPL-3.0); only the method and hyperparameters are reused.
 
-### 3.1 Graph schema (access control heterogeneous graph)
+### 3.1 Input format
 
-| Paper (Amazon dataset) | Corax (campus) |
+Corax is not tied to one domain. The HGNN reads two CSV files, described in [data-format.md](data-format.md):
+typed nodes and typed edges. One edge type is chosen as the link prediction target.
+
+For the campus demo, the graph maps to the paper like this:
+
+| Paper (Amazon dataset) | Campus demo |
 |---|---|
-| `user` | `dosen` |
-| `resource` | `mahasiswa` (the object being accessed) |
-| `department` | `prodi` |
-| `title` | `jabatan` (kaprodi, dekan, dosen) |
-| `manager` | `atasan` (dosen → kaprodi → dekan) |
-| `has_potential_access` | `pernah_akses` (dosen → mahasiswa, from allowed requests only) |
+| `user` | `lecturer` |
+| `resource` | `student` (the object being accessed) |
+| `department` | `program` |
+| `title` | `position` (head_of_program, dean, lecturer) |
+| `manager` | `reports_to` (lecturer → head_of_program → dean) |
+| `has_potential_access` | `accessed` (lecturer → student, from allowed requests only) |
 
-Additional campus edges: `mahasiswa anggota prodi`, `prodi bagian_dari fakultas`,
-`dosen mengajar matkul`, `mahasiswa mengambil matkul`, `matkul milik prodi`, `dosen wali_dari mahasiswa`.
+Additional campus edges: `student member_of program`, `program part_of faculty`,
+`lecturer teaches course`, `student enrolled_in course`, `course belongs_to program`, `lecturer advises student`.
 
-`jabatan` is a node, not an attribute, so the graph contains the meta-path
-`dosen → jabatan → dosen` ("both are kaprodi"). This is what lets the model see that two kaprodi are similar.
+`position` is a node, not an attribute, so the graph contains the meta-path
+`lecturer → position → lecturer` ("both are heads of program"). This is what lets the model see that two heads of program are similar.
 
 ### 3.2 Architecture and training
-
-Same as the paper:
 
 | Item | Value |
 |---|---|
 | Node input | Learnable `nn.Embedding` per node |
 | Encoder | 2 × `SAGEConv` with ReLU, converted with `to_hetero()` |
 | Graph | `ToUndirected()` (adds reverse edges) |
-| Self-supervised task | Link prediction on `pernah_akses` |
-| Decoder | Dot product `h_dosen · h_mahasiswa` |
+| Self-supervised task | Link prediction on the target edge type |
+| Decoder | Dot product `h_user · h_object` |
 | Loss | Binary cross-entropy with logits |
 | Split | `RandomLinkSplit` 0.9 / 0.1, negative sampling ratio 2 |
 | Optimizer | Adam, learning rate 0.001 |
 | Early stopping | Patience 10 on validation loss |
 | Embedding size | 64 to start (paper ablates 16–256) |
 
-Output: embeddings for every node, written to Redis (`emb:<version>:<node_type>:<id>`).
+**One deliberate difference:** the paper trains in mini-batches with `LinkNeighborLoader`; Corax trains full-batch.
+The demo graph is small (about 1,500 nodes), and `LinkNeighborLoader` needs `pyg-lib`, which is hard to install on Windows.
+The model and objective are the same.
 
-**Retraining.** Because node inputs are learned per node (transductive), new users or students only get an
-embedding after the job is rerun. `hgnn-job` therefore runs periodically and after data changes.
+Output: an embedding per node, saved with the training metadata (and later loaded into AI-Corax).
 
-## 4. Use A: risk classifier
+**Retraining.** Node inputs are learned per node (transductive), so new users or objects only get an embedding
+after the job is rerun.
 
-| Item | Value |
-|---|---|
-| Features | NodeEmb+: `[h_dosen ‖ h_mahasiswa]` + original attributes |
-| Model | Random Forest, `n_estimators=100`, `max_depth=50`, `random_state=0` (as in the paper) |
-| Training data | Only policy-allowed requests, labelled normal / suspicious |
-| Metric | F1 of the minority (suspicious) class, p99 latency < 20 ms |
+## 4. Use A: risk score (per request)
 
-Decision in `authz-service`:
+The risk score reuses the HGNN's own link prediction decoder, so no extra model or labelled data is needed:
 
 ```
-final_allow = policy_allow AND NOT (risk > AI_RISK_THRESHOLD)
+score = h_user · h_object
+p     = σ(score)          how likely this user is to be connected to this object
+risk  = 1 − p
 ```
 
-- The classifier is only called when `policy_allow` is true, so it can never grant access.
-- On model error or timeout (`AI_TIMEOUT_MS`), the policy decision stands and the event is logged.
+`ai_high_risk` is true when `risk > AI_RISK_THRESHOLD`.
 
-**Why deny-only.** The paper's best configuration (RF + NodeEmb+) reaches about 76% accuracy.
-That is useful as a risk signal, but not good enough to grant access.
+- The dot product is used (not cosine) because the model was trained with it.
+- **Threshold calibration:** the threshold is set from validation data so that almost all legitimate, policy-allowed
+  requests pass (e.g. 99%). A lecturer who just started teaching a course has no access history yet, but is still
+  connected to the students through `teaches` / `enrolled_in`, so the score stays reasonable.
+- If a user or object has no embedding yet, no score is returned and the policy decision stands.
 
-**Known limit.** The model scores *pairs*, not behaviour over time. It does not detect fast enumeration
-by an otherwise legitimate user. This is a deliberate choice to stay faithful to the paper.
+**Known limit.** The score is about *pairs*, not behaviour over time. It does not detect fast enumeration by an
+otherwise legitimate user.
 
 ## 5. Use B: similar-case search (Corax contribution)
 
-Not part of either paper. Triggered when an admin approves an appeal, e.g.
-`(dosen_budi, mhs_x, read_nilai, IF201)`.
+Not part of either paper. Runs inside `POST /appeals`, e.g. for `(lecturer_budi, student_candra, read_grades, IF202)`.
 
-1. **Candidates:** all (dosen, mahasiswa) pairs that the current policy denies for the same action.
-   These are the only pairs a new allow rule could change.
-2. **kNN:** cosine nearest neighbours of `[h_budi ‖ h_x]` among the candidates
+1. **Candidates:** all (user, object) pairs that the current policy denies for the same action.
+2. **kNN:** cosine nearest neighbours of `[h_user ‖ h_object]` among the candidates
    (scikit-learn `NearestNeighbors`).
 3. **Pattern miner (deterministic):** evaluate predicates from a fixed vocabulary derived from the schema
-   on the approved pair, its neighbours, and a random baseline of pairs.
+   on the appealed pair, its neighbours, and a random baseline of pairs.
 
-| Predicate | Approved pair | Neighbours | Random pairs |
+| Predicate | Appealed pair | Neighbours | Random pairs |
 |---|---|---|---|
-| `user.jabatan == "kaprodi"` | ✓ | 95% | 4% |
-| `user.prodi == resource.prodi` | ✓ | 98% | 30% |
-| `user.fakultas == resource.fakultas` | ✓ | 100% | 55% |
-| `mengajar(user, resource)` | ✗ | 10% | 8% |
+| `user.position == "head_of_program"` | ✓ | 95% | 4% |
+| `user.program == resource.program` | ✓ | 98% | 30% |
+| `user.faculty == resource.faculty` | ✓ | 100% | 55% |
+| `teaches(user, resource)` | ✗ | 10% | 8% |
 
-   Pick the smallest conjunction that holds for the approved pair and most neighbours,
-   and rarely holds for random pairs. Here: `jabatan == kaprodi AND same prodi`.
+   Pick the smallest conjunction that holds for the appealed pair and most neighbours,
+   and rarely holds for random pairs. Here: `position == head_of_program AND same program`.
 
-The miner makes the "why" auditable. The LLM only receives predicates that exist in the schema.
+The miner makes the "why" auditable, and the admin approves a readable pattern, not code.
 
 ## 6. Model 2: LLM rule writer
 
 Follows Mai et al. 2025, adapted from Python policies to Rego. Models run locally with Ollama.
+The LLM only runs after the tier check has passed (or the admin confirmed), which saves time on slow local models.
 
 | Paper | Corax |
 |---|---|
-| Knowledge base + RAG, multi-turn prompt with persona and few-shot examples | Prompt contains attribute schema, current policy, approved appeal, mined pattern, neighbour summary, example rules |
+| Knowledge base + RAG, multi-turn prompt with persona and few-shot examples | Prompt contains attribute schema, current policy, appeal, approved pattern, example rules |
 | LLM writes a Python policy function with a docstring | LLM writes a Rego rule with a `# METADATA` block (same fields) |
 | Mixture of agents: several LLM generators | 2–3 local models run one after another (e.g. `qwen2.5-coder:7b`, `llama3.1:8b`) |
 | Deterministic aggregator, majority vote | Same |
-| Policy equivalence: AST similarity + identical decisions on a request list | AST from `opa parse` + identical decisions on synthetic requests |
+| Policy equivalence: AST similarity + identical decisions on a request list | AST from `opa parse` + identical decisions on candidate pairs |
 | Deterministic validation (Bandit) | `opa check --strict` + AST check that only whitelisted attributes are used |
 | Non-deterministic validation (LLM review) | Same |
-| Priority optimization (optional) | Skipped: generated rules are allow-only and deny guards always win, so there are no priority conflicts |
+| Priority optimization (optional) | Skipped: generated rules are allow-only, so there are no priority conflicts |
 
 Example output:
 
 ```rego
 # METADATA
-# title: kaprodi_read_nilai_own_prodi
-# description: A kaprodi may read grades of students in their own study program.
+# title: head_of_program_read_grades_own_program
+# description: A head of program may read grades of students in their own study program.
 # custom:
 #   appeal_id: appeal-0001
-#   attributes: [user.jabatan, user.prodi, resource.prodi]
+#   attributes: [user.position, user.program, resource.program]
 #   votes: 3/3
-#   expires_ns: 1792800000000000000
 generated_allow if {
-	input.action == "read_nilai"
-	data.users[input.user.id].jabatan == "kaprodi"
-	data.users[input.user.id].prodi == data.mahasiswa[input.resource.id].prodi
-	time.now_ns() < 1792800000000000000
+	input.action == "read_grades"
+	data.users[input.user.id].position == "head_of_program"
+	data.users[input.user.id].program == data.users[input.resource.id].program
 }
 ```
 
-The expiry is checked inside Rego, so the rule stops working on time even if the cleanup job fails.
-
-## 7. Validation and decision engine
+## 7. Validation and tiers
 
 ### 7.1 Validation chain (any failure rejects the rule)
 
 1. Rego parses; `opa check --strict` passes.
-2. AST uses only whitelisted attributes and only writes `generated_allow`.
-3. `opa test` passes, including all existing tests and deny guards.
-4. The approved appeal is now allowed (sanity check).
-5. Impact test: replay historical requests on old and new policy, e.g.
-   "changes 340 decisions for 6 users".
+2. AST uses only whitelisted attributes and only defines `generated_allow`.
+3. `opa test` passes, including all existing tests.
+4. **Equivalence:** the rule gives exactly the same decisions as the approved pattern on all candidate pairs.
+5. The appealed request is now allowed.
 
-### 7.2 Decision inputs
+### 7.2 Tiers
+
+Computed from the mined pattern, before the LLM runs.
 
 | Input | Source |
 |---|---|
-| Depth of the lowest common category covered by the rule | Category tree |
-| Number of affected users and changed decisions | Impact test |
-| Action sensitivity (`data-pribadi` > `nilai`) | Config |
-| LLM vote agreement (e.g. 3/3 vs 2/3) | Model 2 |
-| Mean risk score of the newly allowed pairs | Use A |
+| Depth of the lowest common category covered by the pattern | Category tree |
+| Number of affected users and changed decisions | Replay of historical decisions |
+| Mean risk score of the newly opened pairs | Use A |
 
-The last row means **Use A audits Use B**: if the pairs a new rule would open look risky to the classifier,
-the rule is not applied automatically.
-
-### 7.3 Tiers
-
-Example category tree: `root (0) → dosen (1) → fakultas (2) → prodi (3) → jabatan (4)`.
+Example category tree: `root (0) → lecturer (1) → faculty (2) → program (3) → position (4)`.
 Closer to the root means more people are affected.
 
-| Depth | Example scope | Action | Expiry |
-|---|---|---|---|
-| ≥ 3 | One prodi, few users | Applied automatically | 7 days |
-| 2 | One fakultas | Applied automatically, admin notified | 24 hours |
-| ≤ 1 | All lecturers or cross-faculty | Waits for admin approval | — |
+| Tier | Condition (configurable) | Action |
+|---|---|---|
+| Small | depth ≥ `AUTO_APPLY_MIN_DEPTH` and users ≤ `AUTO_APPLY_MAX_USERS` and low mean risk | Applied automatically, logged |
+| Large | anything else | Waits for admin confirmation |
 
-Sensitive actions (`data-pribadi`) get half the expiry. All values are configurable.
-Expired rules are removed unless an admin promotes them to permanent.
 Revoking a rule means deleting its file from `policies/generated/`; OPA reloads with `--watch`.
 
 ## 8. Safety invariants
 
-1. Final decision: `allow = (base_allow OR generated_allow) AND NOT explicit_deny`.
-   Deny guards live in a separate file that the AI cannot write.
-2. AI only writes files under `policies/generated/`.
-3. Every generated rule records its origin: appeal id, neighbours, votes, impact test result.
-4. Access granted by a generated rule still goes through the risk classifier.
-5. Expiry is enforced inside Rego.
+1. `allow = base_allow AND NOT ai_high_risk`; the AI risk score can only turn allow into deny.
+2. Generated rules only add `generated_allow` clauses and live only under `policies/generated/`.
+3. Every generated rule records its origin: appeal id, neighbours, pattern, votes, scope.
+4. Access granted by a generated rule still goes through the risk score.
+5. Policies change only through files; OPA's REST API is not used for writes and is not exposed.
 
 ## 9. Threats and mitigations
 
 | Threat | Mitigation |
 |---|---|
-| A socially engineered appeal gets generalised | Appeals are approved by a human; tiers, impact test and expiry limit the blast radius |
-| Graph poisoning (Zhang et al. 2022) | `pernah_akses` edges come only from allowed requests; risk classifier checks newly opened pairs |
-| Prompt injection into the LLM | LLM input is structured, sanitised data; output must pass the AST whitelist |
-| Over-generalisation | Smallest conjunction, impact test, depth tiers |
-| AI-generated rule is wrong | Risk classifier still denies suspicious pairs (demo 2) |
+| A socially engineered appeal gets generalised | Appeals are approved by a human admin; tiers and scope limit the blast radius |
+| Graph poisoning (Zhang et al. 2022) | `accessed` edges come only from allowed requests; risk score checks newly opened pairs |
+| Prompt injection into the LLM | LLM input is structured, sanitised data; output must pass the AST whitelist and equivalence check |
+| Over-generalisation | Smallest conjunction, scope count, depth tiers |
+| AI-generated rule is wrong | Equivalence check; risk score still denies suspicious pairs (demo 2) |
+| Non-admin calls `/appeals` | OPA checks the admin role before the request reaches AI-Corax |
 
 ## 10. Evaluation
 
-The synthetic data generator hides **ground-truth policies** (e.g. "kaprodi may read grades of their prodi"),
+The synthetic data generator hides **ground-truth policies** (e.g. "a head of program may read grades of students in their program"),
 so the pipeline can be measured end to end.
 
 | Component | Metric |
 |---|---|
 | HGNN | Link prediction AUC on validation set |
-| Risk classifier | Minority-class F1, p99 latency |
+| Risk score | False deny rate on legitimate requests, detection rate on over-broad-rule requests, p99 latency |
 | Similar-case search | Precision@k (neighbours covered by the hidden policy) |
 | Whole pipeline | **Rule recovery rate**: share of appeal scenarios that produce a rule equivalent to the hidden policy |
 
@@ -244,18 +254,25 @@ so the pipeline can be measured end to end.
 | Demo | Story | Shows |
 |---|---|---|
 | 01 | A student swaps the ID in the URL to read a classmate's grades → 403 | Policy stops BOLA |
-| 02 | An over-broad rule ("lecturers may read grades in their faculty") lets `dosen_andi`, a new lecturer with no relations, request `mhs_dewi`'s grades → policy ALLOW, AI DENY (risk 0.87 > 0.70) | AI can only tighten, even when a rule is wrong |
-| 03 | `dosen_budi` (kaprodi IF) is denied, appeals, admin approves → HGNN finds `dosen_sari` (kaprodi SI) → LLM writes the kaprodi rule → Sari gets access without appealing | Appeals generalise to similar cases |
+| 02 | An over-broad rule ("lecturers may read grades in their faculty") lets `lecturer_andi`, a new lecturer with no relations, request `student_dewi`'s grades → policy ALLOW, AI DENY | AI can only tighten, even when a rule is wrong |
+| 03 | `lecturer_budi` (head of program IF) is denied, admin approves his appeal → exception applied → HGNN finds `lecturer_sari` (head of program SI) → LLM writes the head-of-program rule → Sari gets access without appealing | Appeals generalise to similar cases |
 
-## 12. Requirements for the data generator (phase 2)
+## 12. Requirements for the data generator
 
-- Category tree, users, students, courses, and all edges in section 3.1.
-- `pernah_akses` history from allowed requests.
+- Category tree, users, objects, and all edges in section 3.1, in the format of [data-format.md](data-format.md).
+- `accessed` history from allowed requests only.
 - Hidden ground-truth policies for evaluation.
-- Labelled policy-allowed requests (normal / suspicious) for the risk classifier.
-- Appeal scenarios with expected rules.
+- Legitimate and over-broad-rule requests for threshold calibration and evaluation.
+- Appeal scenarios with expected rules, including one that should not generalise.
 
-## 13. References
+## 13. Future work
+
+- Rule expiry (auto-applied rules expire unless an admin makes them permanent).
+- Behaviour features (request rate) to detect enumeration.
+- Inductive node features so new users get embeddings without retraining.
+- Mini-batch training for large graphs.
+
+## 14. References
 
 - Yin et al., *A heterogeneous graph-based semi-supervised learning framework for access control decision-making*, World Wide Web 2024. Code: https://github.com/happyResearcher/ACHG-SSLF (GPL-3.0, not copied).
 - Mai et al., *LLM-Based Fine-Grained ABAC Policy Generation*, ICISSP 2025.
