@@ -18,7 +18,7 @@ Corax keeps **policy code as the source of truth** and uses AI only where it hel
 |---|---|---|
 | Policy code (OPA / Rego) | Final authority, deterministic | Yes |
 | AI risk check (per request) | Flags suspicious requests that passed policy | **No, it can only deny** |
-| AI rule suggestion (admin flow) | Finds similar cases when an admin approves an appeal, writes a rule | Only through a validated, expiring rule; broad grants need a human |
+| AI rule suggestion (admin flow) | Finds similar cases when an admin approves an appeal, writes a rule | Only through a validated rule; broad grants need a human |
 
 ---
 
@@ -27,22 +27,26 @@ Corax keeps **policy code as the source of truth** and uses AI only where it hel
 ### 1. Request path (every request)
 
 ```
-Client ──► Envoy sidecar ──► authz-service ──► OPA (policy code)
-                                   │              deny  → 403
-                                   │              allow ↓
-                                   └──► AI risk check (classifier on HGNN embeddings)
-                                          low risk  → forward to service
-                                          high risk → 403 / step-up, logged
+Client ──► Envoy (PEP) ──► OPA (PDP, policy code)
+                             │  deny  ──────────────────────────► 403
+                             │  allow ↓
+                             └──► AI-Corax /risk   risk = 1 − σ(h_user · h_object)
+                                    low risk  → forward to the application
+                                    high risk → 403, logged
 ```
 
-- User identity comes **only from a verified JWT**, object ID from the URL path. Attributes are never taken from the request body.
-- If the AI model errors or times out, the policy decision stands and the event is logged.
-- If `authz-service` itself is down, Envoy denies everything (`failure_mode_allow: false`).
+- User identity comes **only from a verified JWT**, object ID from the URL path. Both are handled in Rego. Attributes are never taken from the request body.
+- OPA only asks AI-Corax after the policy allowed the request, and the final rule is `allow = base_allow AND NOT ai_high_risk`, so the AI can only deny.
+- If AI-Corax errors or times out, the policy decision stands and the event is logged.
+- If OPA is down, Envoy denies everything (`failure_mode_allow: false`).
 
-### 2. Admin path (when an admin changes one decision)
+### 2. Admin path (when an admin approves an appeal)
 
 ```
 Lecturer Budi (head of study program IF) is denied a student's grades, appeals, admin approves
+   │
+   ▼
+Exact exception for Budi applied immediately
    │
    ▼
 HGNN embeddings ──► nearest similar (lecturer, student) pairs that policy still denies
@@ -51,21 +55,21 @@ HGNN embeddings ──► nearest similar (lecturer, student) pairs that policy 
 Pattern miner ──► shared attributes/relations (e.g. position = head of program, same study program)
    │
    ▼
-Local LLMs draft a Rego rule (mixture of agents, majority vote)
+Tier check (category-tree depth + affected users)
+   │
+   ├─ small scope → continue automatically
+   └─ large scope → waits for admin confirmation
+   ▼
+Local LLMs write a Rego rule (mixture of agents, majority vote)
    │
    ▼
-Validation (opa check, attribute whitelist, opa test) ──► impact test on historical requests
-   │                                                      ("changes 47 decisions for 14 users")
-   ▼
-Decision engine (category-tree depth, affected users, sensitivity, risk score of newly opened pairs)
+Validation (opa check, attribute whitelist, opa test, equivalence with the approved pattern)
    │
-   ├─ deep / small scope → applied automatically, with expiry, logged, revocable
-   └─ broad grant        → waits for admin approval
    ▼
-Rule written to policies/generated/ ──► OPA reloads (--watch)
+Rule written to policies/generated/ ──► OPA reloads (--watch), everything logged
 ```
 
-**Risk tiers.** Users are grouped in a category tree (root → lecturer/student → faculty → study program → position). A proposed rule is scored by the **depth** of the lowest common category it covers and the **number of users** under it. Shallow, large scopes need approval; deep, small scopes are applied automatically with an expiry (7 days, or 24 hours for faculty-wide rules). The expiry is checked inside the Rego rule itself.
+**Risk tiers.** Users are grouped in a category tree (root → lecturer/student → faculty → study program → position). A pattern is scored by the **depth** of the lowest common category it covers and the **number of users** under it. Shallow, large scopes need admin confirmation; deep, small scopes are applied automatically. A rule is revoked by deleting its file.
 
 The full AI design, including how it maps to the papers below, is in [docs/ai-design.md](docs/ai-design.md).
 
@@ -77,11 +81,10 @@ The full AI design, including how it maps to the papers below, is in [docs/ai-de
 |---|---|---|
 | `demo-api` | Python, FastAPI | Deliberately BOLA-vulnerable campus API |
 | `sidecar` | Envoy (`ext_authz`) | One per service |
-| `authz-service` | Python, FastAPI | Core of the tool: policy call + AI check |
-| `policy-engine` | OPA (Rego) | Loads `policies/` with `--watch` |
+| `policy-engine` | OPA with `opa-envoy-plugin` (Rego) | JWT check, path parsing, policy; loads `policies/` with `--watch` |
+| `ai-corax` | Python, FastAPI | `/risk` (per-request risk score) and `/appeals` (similar cases → new rule) |
 | `embedding-store` | Redis | HGNN embeddings |
 | `hgnn-job` | PyTorch Geometric (heterogeneous GraphSAGE) | Recomputes embeddings periodically; reimplemented from Yin et al. 2024 |
-| `rule-suggester` | Python, scikit-learn | Nearest neighbours, pattern miner, validation, impact test, decision engine |
 | `llm` | Ollama (local models) | Writes Rego rules from mined patterns; reimplements Mai et al. 2025 |
 | `data-generator` | Python, Faker | Synthetic users, relations, category tree, labelled access logs |
 
@@ -122,8 +125,6 @@ The demo API is exposed through the sidecar at `http://localhost:8080`.
 | `AI_ON_ERROR` | `follow_policy` | What to do if the model fails |
 | `AUTO_APPLY_MAX_USERS` | `5` | Max affected users for automatic grants |
 | `AUTO_APPLY_MIN_DEPTH` | `3` | Min category-tree depth for automatic grants |
-| `AUTO_RULE_EXPIRY_DAYS` | `7` | Auto-applied rules expire unless approved |
-| `AUTO_RULE_EXPIRY_BROAD_HOURS` | `24` | Expiry for auto-applied faculty-wide rules |
 | `OLLAMA_URL` | `http://host.docker.internal:11434` | Local LLM endpoint |
 | `LLM_MODELS` | `qwen2.5-coder:7b,llama3.1:8b` | Models used as rule generators (majority vote) |
 
@@ -133,16 +134,16 @@ The demo API is exposed through the sidecar at `http://localhost:8080`.
 
 ```
 .
-├── demo-api/          # vulnerable campus API
-├── authz-service/     # policy + AI decision logic
-├── hgnn-job/          # embedding training/inference
-├── rule-suggester/    # similar cases → Rego rules → impact test
-├── data-generator/    # synthetic dataset
-├── policies/          # Rego policies (human-written + generated/ rules)
-├── docs/              # design documents
-├── envoy.yaml
-└── docker-compose.yml
+├── hgnn-job/          # trains the HGNN, exports embeddings
+├── ai-corax/          # /risk and /appeals service
+├── policy/            # generic Rego framework (JWT, risk call, deny-only rule)
+├── deploy/            # envoy.yaml, docker-compose.yml
+├── scripts/           # helpers, e.g. dataset converters
+├── docs/              # design documents and data format
+└── tests/
 ```
+
+The campus demo (vulnerable API, campus policies, synthetic data, demo scripts) lives in a separate repository, Corax-Demo.
 
 ---
 
