@@ -18,9 +18,9 @@ Helper scripts.
    ```
 
    Expected: 36,063 users, 33,252 resources, 405 departments, 4,979 titles, 3,207 managers,
-   595,506 `has_potential_access` edges — the same numbers as Table 2 of Yin et al. 2024.
+   595,506 `has_potential_access` edges.
 3. Train:
 
-   ```bash
+   `
    python hgnn-job/run.py --data datasets/amazon-graph --target-relation has_potential_access --out output/amazon
-   ```
+   `

@@ -69,7 +69,7 @@ def split_edges(graph: Graph, config: TrainConfig) -> tuple[HeteroData, HeteroDa
     return train_data, val_data
 
 
-def _sample_training_pairs(
+def sample_training_pairs(
     data: HeteroData, target, negative_ratio: float
 ) -> tuple[Tensor, Tensor]:
     """Positive training edges plus fresh random negative pairs, with their 0/1 labels."""
@@ -85,7 +85,7 @@ def _sample_training_pairs(
     return pairs, labels
 
 
-def _loss_and_scores(model: HGNN, data: HeteroData, target, pairs, labels):
+def loss_and_scores(model: HGNN, data: HeteroData, target, pairs, labels):
     h = model.encode(data)
     logits = link_logits(h[target[0]], h[target[2]], pairs)
     return F.binary_cross_entropy_with_logits(logits, labels), logits
@@ -133,15 +133,15 @@ def train(graph: Graph, config: TrainConfig | None = None) -> TrainResult:
         # Training step
         model.train()
         optimizer.zero_grad()
-        pairs, labels = _sample_training_pairs(train_data, target, config.negative_ratio)
-        train_loss, _ = _loss_and_scores(model, train_data, target, pairs, labels)
+        pairs, labels = sample_training_pairs(train_data, target, config.negative_ratio)
+        train_loss, _ = loss_and_scores(model, train_data, target, pairs, labels)
         train_loss.backward()
         optimizer.step()
 
         # Validation step
         model.eval()
         with torch.no_grad():
-            val_loss, _ = _loss_and_scores(model, val_data, target, val_pairs, val_labels)
+            val_loss, _ = loss_and_scores(model, val_data, target, val_pairs, val_labels)
         history.append((epoch, train_loss.item(), val_loss.item()))
 
         if val_loss.item() < best_val_loss:
@@ -157,7 +157,7 @@ def train(graph: Graph, config: TrainConfig | None = None) -> TrainResult:
     model.load_state_dict(best_state)
     model.eval()
     with torch.no_grad():
-        _, val_scores = _loss_and_scores(model, val_data, target, val_pairs, val_labels)
+        _, val_scores = loss_and_scores(model, val_data, target, val_pairs, val_labels)
 
     return TrainResult(
         model=model,
