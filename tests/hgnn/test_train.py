@@ -39,7 +39,7 @@ def test_auc_all_ties_is_half():
 
 def test_split_holds_out_validation_edges_with_negatives(graph):
     torch.manual_seed(0)
-    _, val_data = split_edges(graph, FAST)
+    _, val_data, _ = split_edges(graph, FAST)
     labels = val_data[graph.target].edge_label
 
     positives = int(labels.sum())
@@ -50,7 +50,7 @@ def test_split_holds_out_validation_edges_with_negatives(graph):
 
 def test_validation_edges_are_hidden_from_training_messages(graph):
     torch.manual_seed(0)
-    train_data, val_data = split_edges(graph, FAST)
+    train_data, val_data, _ = split_edges(graph, FAST)
     target = graph.target
 
     message_edges = set(map(tuple, train_data[target].edge_index.t().tolist()))

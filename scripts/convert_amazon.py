@@ -4,7 +4,7 @@ Source: https://archive.ics.uci.edu/dataset/216/amazon+access+samples (CC BY 4.0
 Input:  amzn-anon-access-samples-2.0.csv (one row per user, about 4.8 GB)
 Output: nodes.csv and edges.csv (see docs/data-format.md)
 
-The graph follows: 
+The graph follows:
     user --belongs_to------------> department      (PERSON_DEPTNAME)
     user --works_as--------------> title           (PERSON_BUSINESS_TITLE)
     user --supervised_by---------> manager         (PERSON_MGR_ID)
