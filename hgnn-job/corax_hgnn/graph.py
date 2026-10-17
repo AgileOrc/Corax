@@ -1,5 +1,4 @@
 """Load a typed graph from nodes.csv and edges.csv into a PyTorch Geometric HeteroData object.
-
 The file format is described in docs/data-format.md.
 """
 
@@ -20,13 +19,13 @@ class Graph:
     data: HeteroData
     # node type -> node ids, in the same order as the rows of that type's embedding matrix
     node_ids: dict[str, list[str]]
-    # the edge type used for link prediction, e.g. ("lecturer", "accessed", "student")
+    # the edge type used for link prediction
     target: EdgeType
-    # the reverse edge type added by ToUndirected, e.g. ("student", "rev_accessed", "lecturer")
+    # the reverse edge type added by ToUndirected
     target_reverse: EdgeType
 
 
-def _read_rows(path: Path, columns: list[str]) -> list[dict[str, str]]:
+def read_rows(path: Path, columns: list[str]) -> list[dict[str, str]]:
     with path.open(newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         missing = [c for c in columns if c not in (reader.fieldnames or [])]
@@ -41,7 +40,7 @@ def load_graph(folder: str | Path, target_relation: str) -> Graph:
     # 1. Nodes: give every node an index inside its own type.
     node_ids: dict[str, list[str]] = defaultdict(list)
     index: dict[str, tuple[str, int]] = {}  # node id -> (type, index within type)
-    for line, row in enumerate(_read_rows(folder / "nodes.csv", ["id", "type"]), start=2):
+    for line, row in enumerate(read_rows(folder / "nodes.csv", ["id", "type"]), start=2):
         node_id, node_type = row["id"], row["type"]
         if node_id in index:
             raise ValueError(f"nodes.csv line {line}: duplicate node id {node_id!r}")
@@ -50,7 +49,7 @@ def load_graph(folder: str | Path, target_relation: str) -> Graph:
 
     # 2. Edges: group by (source type, relation, destination type).
     edges: dict[EdgeType, tuple[list[int], list[int]]] = defaultdict(lambda: ([], []))
-    rows = _read_rows(folder / "edges.csv", ["src", "relation", "dst"])
+    rows = read_rows(folder / "edges.csv", ["src", "relation", "dst"])
     for line, row in enumerate(rows, start=2):
         for column in ("src", "dst"):
             if row[column] not in index:

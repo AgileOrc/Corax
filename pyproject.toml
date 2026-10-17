@@ -12,4 +12,9 @@ select = ["E", "F", "I", "B", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["hgnn-job"]
+pythonpath = ["hgnn-job", "scripts"]
+# Noise from third-party libraries on Python 3.13, not from Corax code.
+filterwarnings = [
+    "ignore::DeprecationWarning:torch_geometric.*",
+    "ignore:`torch.jit.script` is deprecated:FutureWarning",
+]
