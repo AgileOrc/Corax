@@ -1,0 +1,29 @@
+{
+  "corax": {
+    "config": {
+      "jwt": {
+        "secret": "change-me",
+        "iss": "campus-demo",
+        "aud": "campus-api"
+      },
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/students/:id/grades/:course_code",
+          "action": "read_grades",
+          "resource_type": "student"
+        },
+        {
+          "method": "GET",
+          "path": "/students/:id/personal-data",
+          "action": "read_personal_data",
+          "resource_type": "student"
+        }
+      ],
+      "ai": {
+        "url": "http://ai-corax:8000",
+        "timeout": "20ms"
+      }
+    }
+  }
+}
