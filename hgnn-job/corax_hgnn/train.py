@@ -44,6 +44,9 @@ class TrainConfig:
     # Share of training negatives taken from peers' objects instead of random pairs.
     # 0 = paper (random only). Experiment E2.
     hard_negative_ratio: float = 0.0
+    # Share of real access (validation positives) that must pass the AI check.
+    # Sets the exported risk threshold; not part of the paper.
+    target_pass_rate: float = 0.99
     seed: int = 0
 
 
@@ -57,6 +60,9 @@ class TrainResult:
     history: list[tuple[int, float, float]] = field(default_factory=list)
     # held-out test edges (only when TrainConfig.test_ratio > 0); never used during training
     test_data: HeteroData | None = None
+    # validation pairs scored by the best model, used to calibrate the risk threshold
+    val_labels: Tensor | None = None
+    val_probs: Tensor | None = None
 
 
 def split_edges(graph: Graph, config: TrainConfig) -> tuple[HeteroData, HeteroData, HeteroData]:
@@ -200,4 +206,6 @@ def train(graph: Graph, config: TrainConfig | None = None) -> TrainResult:
         val_auc=roc_auc(val_labels, val_scores),
         history=history,
         test_data=test_data if config.test_ratio > 0 else None,
+        val_labels=val_labels,
+        val_probs=torch.sigmoid(val_scores),
     )

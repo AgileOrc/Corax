@@ -50,6 +50,16 @@ def test_metadata_records_training_results(exported):
     assert metadata["num_nodes"]["student"] == 6
 
 
+def test_metadata_records_calibrated_risk_threshold(exported):
+    _, _, out = exported
+
+    threshold = json.loads((out / "metadata.json").read_text(encoding="utf-8"))["risk_threshold"]
+
+    assert threshold["target_pass_rate"] == 0.99
+    assert 0.0 <= threshold["value"] <= 1.0
+    assert threshold["val_false_deny_rate"] <= 0.01
+
+
 def test_history_has_one_row_per_epoch(exported):
     _, result, out = exported
 
@@ -77,4 +87,5 @@ def test_command_line_runs_end_to_end(tmp_path):
 
     assert completed.returncode == 0, completed.stderr
     assert "val AUC" in completed.stdout
+    assert "risk threshold" in completed.stdout
     assert (tmp_path / "embeddings.npz").exists()

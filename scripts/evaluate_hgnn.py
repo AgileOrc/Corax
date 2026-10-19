@@ -4,9 +4,7 @@ The test edges are never used for training or early stopping, so these numbers a
 Embeddings are exported as well, and the metrics are added to metadata.json ("test_metrics").
 
 Example:
-    python scripts/evaluate_hgnn.py --data datasets/amazon-graph \
-        --target-relation has_potential_access --out output/amazon-eval
-"""
+ """
 
 import argparse
 import json
@@ -35,6 +33,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hidden", type=int, default=defaults.hidden)
     parser.add_argument("--num-layers", type=int, default=defaults.num_layers)
     parser.add_argument("--hard-negative-ratio", type=float, default=defaults.hard_negative_ratio)
+    parser.add_argument(
+        "--target-pass-rate", type=float, default=defaults.target_pass_rate,
+        help="share of real access that must pass; sets the exported risk threshold",
+    )  # fmt: skip
     parser.add_argument("--learning-rate", type=float, default=defaults.learning_rate)
     parser.add_argument("--max-epochs", type=int, default=defaults.max_epochs)
     parser.add_argument("--patience", type=int, default=defaults.patience)
@@ -69,6 +71,20 @@ def print_report(results: dict) -> None:
                   f"{_rates(row, 0)}")  # fmt: skip
 
 
+def print_calibration(results: dict) -> None:
+    """Threshold chosen on validation data, checked on the test edges."""
+    rnd = results["random_negatives"]["hgnn"]["calibrated"]
+    hard = results["hard_negatives"]["hgnn"]["calibrated"]
+    print("\ncalibrated on validation, measured on test (deny when risk > threshold)")
+    print(f"{'target pass':>12}{'threshold':>11}{'false deny':>12}{'detect random':>15}"
+          f"{'detect hard':>13}")  # fmt: skip
+    for r, h in zip(rnd, hard, strict=True):
+        print(
+            f"{r['target_pass_rate']:>12.1%}{r['risk_threshold']:>11.4f}"
+            f"{r['false_deny_rate']:>12.4f}{r['detection_rate']:>15.4f}{h['detection_rate']:>13.4f}"
+        )
+
+
 def _rates(row: dict, pad: int = 8) -> str:
     return f"{'':{pad}}{row['false_deny_rate']:>17.4f}{row['detection_rate']:>12.4f}"
 
@@ -82,6 +98,7 @@ def main() -> None:
         hidden=args.hidden,
         num_layers=args.num_layers,
         hard_negative_ratio=args.hard_negative_ratio,
+        target_pass_rate=args.target_pass_rate,
         learning_rate=args.learning_rate,
         max_epochs=args.max_epochs,
         patience=args.patience,
@@ -91,7 +108,10 @@ def main() -> None:
     result = train(graph, config)
     out_dir = save(result, graph, config, args.out)
 
-    results = evaluate(result.model, graph, result.test_data, seed=args.seed)
+    results = evaluate(
+        result.model, graph, result.test_data, seed=args.seed,
+        val_labels=result.val_labels, val_probs=result.val_probs,
+    )  # fmt: skip
     metadata_path = out_dir / "metadata.json"
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     metadata["test_metrics"] = results
@@ -101,6 +121,12 @@ def main() -> None:
         f"\nbest epoch {result.best_epoch} of {len(result.history)}, val AUC {result.val_auc:.4f}"
     )
     print_report(results)
+    print_calibration(results)
+    chosen = metadata["risk_threshold"]
+    print(
+        f"\nexported risk threshold {chosen['value']:.4f}"
+        f" (target pass rate {chosen['target_pass_rate']:.1%})"
+    )
     print(f"\nsaved to {out_dir} (test metrics in metadata.json)")
 
 

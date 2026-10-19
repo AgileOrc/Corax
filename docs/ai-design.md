@@ -125,9 +125,13 @@ risk  = 1 − p
 `ai_high_risk` is true when `risk > AI_RISK_THRESHOLD`.
 
 - The dot product is used (not cosine) because the model was trained with it.
-- **Threshold calibration:** the threshold is set from validation data so that almost all legitimate, policy-allowed
-  requests pass (e.g. 99%). A lecturer who just started teaching a course has no access history yet, but is still
-  connected to the students through `teaches` / `enrolled_in`, so the score stays reasonable.
+- **Threshold calibration:** the threshold is the risk below which a target share of the legitimate pairs in the
+  validation data falls (`target_pass_rate`, default 0.99, i.e. about 1% false deny). The value is an operating
+  choice, not taken from Yin et al.: `scripts/evaluate_hgnn.py` prints false deny and detection on the test edges
+  for 95%, 98%, 99%, 99.5% and 99.9%, and the target is picked from that table. The chosen threshold is stored
+  in `metadata.json` (`risk_threshold`). Scores are deterministic, so a legitimate pair that is denied is denied
+  every time and can be resolved once through an appeal.
+- A lecturer who just started teaching a course has no access history yet, but is still connected to the students through `teaches` / `enrolled_in`, so the score stays reasonable.
 - If a user or object has no embedding yet, no score is returned and the policy decision stands.
 
 **Known limit.** The score is about *pairs*, not behaviour over time. It does not detect fast enumeration by an

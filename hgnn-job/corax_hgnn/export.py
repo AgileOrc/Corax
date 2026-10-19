@@ -3,7 +3,8 @@
 Output folder:
     embeddings.npz   one float32 matrix per node type; row i belongs to node_ids[type][i]
     node_ids.json    node type -> list of node ids
-    metadata.json    training settings, data size, best epoch, validation loss and AUC
+    metadata.json    training settings, data size, best epoch, validation loss and AUC,
+                     calibrated risk threshold ("risk_threshold")
     history.csv      epoch, train_loss, val_loss (for the learning curve)
 """
 
@@ -17,6 +18,7 @@ import numpy as np
 import torch
 import torch_geometric
 
+from corax_hgnn.evaluate import calibrate
 from corax_hgnn.graph import Graph
 from corax_hgnn.train import TrainConfig, TrainResult
 
@@ -41,6 +43,7 @@ def save(result: TrainResult, graph: Graph, config: TrainConfig, out_dir: str | 
         "epochs_run": len(result.history),
         "best_val_loss": result.best_val_loss,
         "val_auc": result.val_auc,
+        "risk_threshold": calibrate(result.val_labels, result.val_probs, config.target_pass_rate),
         "num_nodes": {t: graph.data[t].num_nodes for t in graph.data.node_types},
         "num_edges": {
             "/".join(edge_type): graph.data[edge_type].edge_index.size(1)

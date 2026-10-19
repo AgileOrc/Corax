@@ -12,6 +12,9 @@ Corax denies a policy-allowed request when risk = 1 - p is above AI_RISK_THRESHO
 threshold table reports, for each risk threshold:
     false deny rate = share of real access that would be denied   (should be very low)
     detection rate  = share of negatives that would be denied     (higher is better)
+
+Calibration: the threshold is chosen on validation data so that a target share of real access
+passes (e.g. 99%), then checked on the test edges for several targets (PASS_RATES).
 """  # noqa: E501
 
 import random
@@ -28,6 +31,8 @@ RISK_THRESHOLDS = (0.3, 0.5, 0.7, 0.9)
 # deny when fewer than this share of the user's peers have the object
 COVERAGE_THRESHOLDS = (0.01, 0.05, 0.1, 0.2)
 COMBINED_RISK_THRESHOLD = 0.9
+# target shares of real access that pass, for the calibration table
+PASS_RATES = (0.95, 0.98, 0.99, 0.995, 0.999)
 
 
 def confusion(labels: Tensor, probs: Tensor, threshold: float = 0.5) -> dict[str, int]:
@@ -83,6 +88,28 @@ def deny_rates(labels: Tensor, denied: Tensor) -> dict[str, float]:
     }
 
 
+def calibrate_threshold(labels: Tensor, probs: Tensor, target_pass_rate: float) -> float:
+    """Risk threshold that lets at least `target_pass_rate` of the real access through.
+
+    Corax denies when risk > threshold, so the threshold is that quantile of the positives' risk.
+    Use validation data, never the test edges.
+    """
+    risk = 1 - probs[labels == 1].double()
+    return torch.quantile(risk, target_pass_rate, interpolation="higher").item()
+
+
+def calibrate(labels: Tensor, probs: Tensor, target_pass_rate: float) -> dict:
+    """Calibrated threshold plus its false deny and detection rate on the same (validation) data."""
+    threshold = calibrate_threshold(labels, probs, target_pass_rate)
+    rates = deny_rates(labels, 1 - probs > threshold)
+    return {
+        "value": threshold,
+        "target_pass_rate": target_pass_rate,
+        "val_false_deny_rate": rates["false_deny_rate"],
+        "val_detection_rate": rates["detection_rate"],
+    }
+
+
 def sample_hard_negatives(
     graph: Graph, positives: Tensor, per_positive: int = 2, seed: int = 0
 ) -> Tensor:
@@ -94,14 +121,28 @@ def sample_hard_negatives(
     return index.hard_negatives(positives[0].tolist(), per_positive, random.Random(seed))
 
 
-def evaluate(model: HGNN, graph: Graph, test_data, seed: int = 0) -> dict:
+def evaluate(
+    model: HGNN,
+    graph: Graph,
+    test_data,
+    seed: int = 0,
+    val_labels: Tensor | None = None,
+    val_probs: Tensor | None = None,
+) -> dict:
     """Evaluate on held-out test edges, with random and with hard negatives.
 
     Three detectors are compared:
       hgnn           deny when risk = 1 - p is above a threshold
       peer_coverage  deny when fewer than a share of the user's peers have the object
       combined       deny when either says so (risk > 0.9 OR coverage below the share)
+
+    With validation labels and probabilities, "hgnn" also gets a "calibrated" table:
+    one row per PASS_RATES target, with the threshold chosen on validation data.
     """
+    calibrated = []
+    if val_labels is not None and val_probs is not None:
+        calibrated = [(r, calibrate_threshold(val_labels, val_probs, r)) for r in PASS_RATES]
+
     target = graph.target
     model.eval()
     with torch.no_grad():
@@ -133,6 +174,10 @@ def evaluate(model: HGNN, graph: Graph, test_data, seed: int = 0) -> dict:
             "hgnn": {
                 "at_p_0.5": classification_metrics(y, probs, 0.5),
                 "thresholds": threshold_table(y, probs),
+                "calibrated": [
+                    {"target_pass_rate": r, "risk_threshold": t, **deny_rates(y, 1 - probs > t)}
+                    for r, t in calibrated
+                ],
             },
             "peer_coverage": {
                 "auc": roc_auc(y, coverage),

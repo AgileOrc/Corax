@@ -5,6 +5,7 @@ Example:
 """
 
 import argparse
+import json
 import logging
 import warnings
 
@@ -28,6 +29,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--learning-rate", type=float, default=defaults.learning_rate)
     parser.add_argument("--max-epochs", type=int, default=defaults.max_epochs)
     parser.add_argument("--patience", type=int, default=defaults.patience)
+    parser.add_argument(
+        "--target-pass-rate", type=float, default=defaults.target_pass_rate,
+        help="share of real access that must pass; sets the exported risk threshold",
+    )  # fmt: skip
     parser.add_argument("--seed", type=int, default=defaults.seed)
     return parser.parse_args()
 
@@ -49,14 +54,18 @@ def main() -> None:
         learning_rate=args.learning_rate,
         max_epochs=args.max_epochs,
         patience=args.patience,
+        target_pass_rate=args.target_pass_rate,
         seed=args.seed,
     )
     result = train(graph, config)
     out_dir = save(result, graph, config, args.out)
+    metadata = json.loads((out_dir / "metadata.json").read_text(encoding="utf-8"))
 
     print(f"best epoch      {result.best_epoch} of {len(result.history)}")
     print(f"best val loss   {result.best_val_loss:.4f}")
     print(f"val AUC         {result.val_auc:.4f}")
+    print(f"risk threshold  {metadata['risk_threshold']['value']:.4f}"
+          f" (target pass rate {config.target_pass_rate:.1%})")  # fmt: skip
     print(f"saved to        {out_dir}")
 
 

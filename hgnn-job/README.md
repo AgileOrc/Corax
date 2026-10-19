@@ -21,7 +21,7 @@ python hgnn-job/run.py --data tests/hgnn/fixtures/toy_graph --target-relation ac
 ```
 
 Options (defaults follow the paper): `--hidden 64`, `--learning-rate 0.001`, `--max-epochs 1000`,
-`--patience 10`, `--seed 0`.
+`--patience 10`, `--seed 0`. `--target-pass-rate 0.99` sets the exported risk threshold (not from the paper).
 
 ## Output
 
@@ -29,5 +29,5 @@ Options (defaults follow the paper): `--hidden 64`, `--learning-rate 0.001`, `--
 |---|---|
 | `embeddings.npz` | One float32 matrix per node type; row *i* belongs to `node_ids[type][i]` |
 | `node_ids.json` | Node type → list of node ids |
-| `metadata.json` | Settings, data size, best epoch, validation loss and AUC, library versions |
+| `metadata.json` | Settings, data size, best epoch, validation loss and AUC, calibrated `risk_threshold`, library versions |
 | `history.csv` | `epoch,train_loss,val_loss` for the learning curve |

@@ -5,6 +5,9 @@ from pathlib import Path
 import pytest
 import torch
 from corax_hgnn.evaluate import (
+    PASS_RATES,
+    calibrate,
+    calibrate_threshold,
     classification_metrics,
     confusion,
     evaluate,
@@ -53,6 +56,33 @@ def test_threshold_table_false_deny_and_detection():
     assert row["detection_rate"] == pytest.approx(2 / 3)  # negatives with p=0.2 and 0.1
 
 
+def test_calibrated_threshold_lets_the_target_share_of_real_access_pass():
+    # risk of the real access = [0.1, 0.2, 0.6]; at least half must pass -> deny only above 0.2
+    assert calibrate_threshold(LABELS, PROBS, 0.5) == pytest.approx(0.2)
+    # all of them must pass -> deny only above the highest risk
+    assert calibrate_threshold(LABELS, PROBS, 1.0) == pytest.approx(0.6)
+
+
+@pytest.mark.parametrize("target", PASS_RATES)
+def test_calibrated_pass_rate_is_never_below_target(target):
+    generator = torch.Generator().manual_seed(0)
+    labels = torch.ones(1000)
+    probs = torch.rand(1000, generator=generator)
+
+    threshold = calibrate_threshold(labels, probs, target)
+
+    assert ((1 - probs) <= threshold).float().mean().item() >= target
+
+
+def test_calibrate_reports_validation_rates():
+    c = calibrate(LABELS, PROBS, 0.5)
+
+    assert c["value"] == pytest.approx(0.2)
+    assert c["target_pass_rate"] == 0.5
+    assert c["val_false_deny_rate"] == pytest.approx(1 / 3)  # the real access with risk 0.6
+    assert c["val_detection_rate"] == pytest.approx(1.0)  # negatives' risk 0.4, 0.8, 0.9
+
+
 def test_metrics_with_no_predicted_positives_do_not_divide_by_zero():
     m = classification_metrics(LABELS, torch.zeros(6), 0.5)
 
@@ -90,6 +120,22 @@ def test_evaluate_reports_both_negative_kinds(graph):
         assert len(report[name]["hgnn"]["thresholds"]) == 4
         assert 0.0 <= report[name]["peer_coverage"]["auc"] <= 1.0
         assert len(report[name]["combined"]) == 4
+        assert report[name]["hgnn"]["calibrated"] == []  # no validation data given
+
+
+def test_evaluate_with_validation_data_adds_calibration_table(graph):
+    result = train(graph, FAST)
+
+    report = evaluate(
+        result.model, graph, result.test_data,
+        val_labels=result.val_labels, val_probs=result.val_probs,
+    )  # fmt: skip
+
+    for name in ["random_negatives", "hard_negatives"]:
+        rows = report[name]["hgnn"]["calibrated"]
+        assert [r["target_pass_rate"] for r in rows] == list(PASS_RATES)
+        thresholds = [r["risk_threshold"] for r in rows]
+        assert thresholds == sorted(thresholds)  # stricter target -> higher threshold
 
 
 def test_no_test_split_by_default(graph):
@@ -116,4 +162,5 @@ def test_command_line_writes_test_metrics(tmp_path):
 
     assert completed.returncode == 0, completed.stderr
     assert "hard_negatives" in completed.stdout
+    assert "calibrated on validation" in completed.stdout
     assert '"test_metrics"' in (tmp_path / "metadata.json").read_text(encoding="utf-8")
