@@ -50,10 +50,11 @@ def token(sub: str, jwt: dict) -> str:
 @pytest.mark.parametrize(
     ("user", "method", "path", "allowed", "reason"),
     [
-        ("admin_01", "POST", "/appeals", True, "allowed admin request"),
-        ("admin_01", "POST", "/appeals/APL-1/pick", True, "allowed admin request"),
-        ("admin_01", "GET", "/appeals/APL-1", True, "allowed admin request"),
-        ("employee_E001", "POST", "/appeals/APL-1/confirm", False, "admin only"),
+        ("admin_01", "POST", "/corax/appeals", True, "admin action"),
+        ("admin_01", "GET", "/corax/appeals/appeal-0001", True, "admin action"),
+        ("admin_01", "POST", "/corax/appeals/appeal-0001/confirm", True, "admin action"),
+        ("employee_E001", "POST", "/corax/appeals", False, "admin only"),
+        ("employee_E001", "POST", "/corax/appeals/appeal-0001/confirm", False, "admin only"),
         ("employee_E001", "GET", "/documents/document_D001", True, "allowed without AI check"),
         ("employee_E001", "GET", "/documents/document_D002", False, "denied by policy"),
         ("employee_E001", "DELETE", "/documents/document_D001", False, "no matching route"),

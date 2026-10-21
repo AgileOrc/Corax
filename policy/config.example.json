@@ -23,6 +23,11 @@
       "ai": {
         "url": "http://ai-corax:8000",
         "timeout": "20ms"
+      },
+      "admin": {
+        "users": [
+          "admin_rina"
+        ]
       }
     }
   }

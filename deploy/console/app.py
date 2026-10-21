@@ -27,7 +27,7 @@ GATEWAY = os.environ.get("GATEWAY", "http://envoy:8080")
 OPA = os.environ.get("OPA", "http://opa:8181")
 AI_CORAX = os.environ.get("AI_CORAX", "http://ai-corax:8000")
 GENERATED = Path(os.environ.get("GENERATED", "/runtime/generated"))
-STATE = Path(os.environ.get("STATE", "/state"))
+APPEALS = Path(os.environ.get("APPEALS", "/state/appeals"))
 CONFIG = json.loads(Path(os.environ.get("CONFIG", "/config/corax-config.json")).read_text())
 DEMO = Path(os.environ.get("DEMO", "/config/demo.json"))
 SETTINGS = CONFIG["corax"]["config"]
@@ -47,10 +47,11 @@ class AppealRequest(BaseModel):
     document: str
 
 
-class AppealStep(BaseModel):
+class ConfirmRequest(BaseModel):
     admin: str
     appeal_id: str
-    candidate: int | None = None
+    candidate: int | None = None  # None: keep only the exception
+    acknowledge_scope: bool = False
 
 
 def token(user: str) -> str:
@@ -125,7 +126,7 @@ def people() -> dict:
     graph = answer["body"].get("result", {}) if isinstance(answer["body"], dict) else {}
     health = http("GET", f"{AI_CORAX}/health")["body"] or {}
     return {
-        "admins": SETTINGS.get("admins", []),
+        "admins": SETTINGS.get("admin", {}).get("users", []),
         "graph": {n: r for n, r in graph.items() if n.startswith(("employee_", "document_"))},
         "risk_threshold": health.get("risk_threshold") if isinstance(health, dict) else None,
     }
@@ -140,33 +141,33 @@ def read(request: ReadRequest) -> dict:
 
 @app.post("/api/appeals")
 def appeal(request: AppealRequest) -> dict:
-    body = {
-        "appeal_id": f"APL-{int(time.time() * 1000) % 10**8:08d}",
-        "user": request.user,
-        "object": request.document,
-        "action": "read",
-    }
-    return http("POST", f"{GATEWAY}/appeals", body, bearer=token(request.admin))
+    body = {"user": request.user, "object": request.document, "action": "read",
+            "reason": "approved in the demo console"}  # fmt: skip
+    return http("POST", f"{GATEWAY}/corax/appeals", body, bearer=token(request.admin))
 
 
-@app.post("/api/appeals/{step}")
-def appeal_step(step: str, request: AppealStep) -> dict:
-    if step not in ("pick", "confirm", "reject"):
-        return {"status": 404, "body": {"detail": f"unknown step {step!r}"}}
-    body = {"candidate": request.candidate} if step == "pick" else None
-    path = f"{GATEWAY}/appeals/{request.appeal_id}/{step}"
+@app.post("/api/appeals/confirm")
+def confirm(request: ConfirmRequest) -> dict:
+    body = {"candidate": request.candidate, "acknowledge_scope": request.acknowledge_scope}
+    path = f"{GATEWAY}/corax/appeals/{request.appeal_id}/confirm"
     return http("POST", path, body, bearer=token(request.admin))
 
 
 @app.get("/api/policy")
 def policy() -> dict:
-    """What OPA enforces on top of the application rules, and ai-corax's audit log."""
+    """What OPA enforces on top of the application rules, and the history of the appeals."""
     files = sorted(GENERATED.glob("*.rego")) if GENERATED.exists() else []
     rules = [{"file": path.name, "rego": path.read_text()} for path in files]
-    audit = STATE / "audit.jsonl"
-    log = [json.loads(line) for line in audit.read_text().splitlines()[-40:]] if audit.exists() else []
+    log = []
+    for path in APPEALS.glob("appeal-*.json") if APPEALS.exists() else []:
+        record = json.loads(path.read_text())
+        appeal, chosen = record["appeal"], record.get("chosen", {})
+        for event in record["history"]:
+            log.append({**event, "id": record["id"], "user": appeal["user"],
+                        "object": appeal["object"], "pattern": chosen.get("pattern")})  # fmt: skip
+    log.sort(key=lambda e: (e["at"], e["id"]), reverse=True)
     return {
         "exceptions": [r for r in rules if r["file"].endswith("-exception.rego")],
         "rules": [r for r in rules if r["file"].endswith("-rule.rego")],
-        "log": list(reversed(log)),
+        "log": log[:40],
     }

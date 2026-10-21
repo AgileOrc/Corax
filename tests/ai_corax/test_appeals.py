@@ -1,261 +1,254 @@
-import base64
 import json
+import time
 
+import jwt
 import numpy as np
 import pytest
-from appeals import AppealError, Appeals
 from config import Settings
 from fastapi.testclient import TestClient
-from graph import GraphData
 from main import create_app
-from risk import RiskModel
 from tier import TierLimits
 
-HEAD = "position_head"
 STRUCTURE = {
-    "budi": {"holds": [HEAD], "member_of": ["IF"], "teaches": ["IF201"]},
-    "andi": {"holds": ["position_lecturer"], "member_of": ["IF"], "teaches": ["IF202"]},
-    "sari": {"holds": [HEAD], "member_of": ["SI"], "teaches": ["SI101"]},
-    "tono": {"holds": ["position_lecturer"], "member_of": ["SI"]},
-    "ani": {"member_of": ["IF"], "enrolled_in": ["IF201"]},
-    "candra": {"member_of": ["IF"], "enrolled_in": ["IF201", "IF202"]},
-    "fajar": {"member_of": ["IF"], "enrolled_in": ["IF202"]},
-    "dewi": {"member_of": ["SI"], "enrolled_in": ["SI101"]},
-    "gita": {"member_of": ["SI"], "enrolled_in": ["SI102"]},
+    "budi": {"holds": ["head"], "member_of": ["IF"]},
+    "sari": {"holds": ["head"], "member_of": ["SI"]},
+    "andi": {"holds": ["lecturer"], "member_of": ["IF"]},
+    "ani": {"member_of": ["IF"]},
+    "candra": {"member_of": ["IF"]},
+    "dewi": {"member_of": ["SI"]},
 }
-ACCESS = {"budi": ["ani", "candra"], "andi": ["candra", "fajar"], "sari": ["dewi"]}
-# nina is a new lecturer: an embedding, but no relation in the graph
-LECTURERS = ["budi", "andi", "sari", "tono", "nina"]
-STUDENTS = ["ani", "candra", "fajar", "dewi", "gita"]
-HEAD_RULE = [
-    {"kind": "shared", "relation": "member_of", "other": "member_of"},
-    {"kind": "user_has", "relation": "holds", "other": HEAD},
-]
+ACCESS = {"budi": ["ani"]}
+SECRET = "test-secret-with-enough-length-for-hs256"
+
+
+def bearer(user):
+    claims = {"sub": user, "iss": "test-issuer", "aud": "test-api", "exp": int(time.time()) + 300}
+    return {"Authorization": f"Bearer {jwt.encode(claims, SECRET, algorithm='HS256')}"}
+
+
+ADMIN = bearer("admin_rina")
+APPEAL = {"user": "budi", "object": "candra", "action": "read_grades", "reason": "head of program"}
+HEAD_RULE = "user.member_of = object.member_of AND user holds head"
 
 
 @pytest.fixture
-def appeal_model(tmp_path):
-    # IF people point one way, SI people the other: same program = low risk
-    if_, si = [1.0, 0.0], [0.0, 1.0]
-    lecturers = [if_, if_, si, si, [0.5, 0.5]]
-    students = [[3 * x for x in v] for v in (if_, if_, if_, si, si)]
+def model_dir(tmp_path):
+    folder = tmp_path / "model"
+    folder.mkdir()
+    rng = np.random.default_rng(0)
     np.savez(
-        tmp_path / "embeddings.npz",
-        lecturer=np.array(lecturers, dtype=np.float32),
-        student=np.array(students, dtype=np.float32),
+        folder / "embeddings.npz",
+        lecturer=rng.normal(size=(3, 4)).astype(np.float32),
+        student=rng.normal(size=(3, 4)).astype(np.float32),
     )
-    files = {
-        "node_ids.json": {"lecturer": LECTURERS, "student": STUDENTS},
-        "metadata.json": {
-            "target_edge_type": ["lecturer", "accessed", "student"],
-            "risk_threshold": {"value": 0.9, "target_pass_rate": 0.99},
-        },
-        "graph.json": STRUCTURE,
-        "access.json": ACCESS,
+    node_ids = {"lecturer": ["budi", "sari", "andi"], "student": ["ani", "candra", "dewi"]}
+    (folder / "node_ids.json").write_text(json.dumps(node_ids), encoding="utf-8")
+    metadata = {"target_edge_type": ["lecturer", "accessed", "student"], "risk_threshold": {"value": 0.99}}
+    (folder / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+    (folder / "graph.json").write_text(json.dumps(STRUCTURE), encoding="utf-8")
+    (folder / "access.json").write_text(json.dumps(ACCESS), encoding="utf-8")
+    return folder
+
+
+@pytest.fixture
+def corax_config(tmp_path):
+    config = {
+        "corax": {
+            "config": {
+                "jwt": {"secret": SECRET, "iss": "test-issuer", "aud": "test-api"},
+                "admin": {"users": ["admin_rina"]},
+            }
+        }
     }
-    for name, content in files.items():
-        (tmp_path / name).write_text(json.dumps(content), encoding="utf-8")
-    return tmp_path
+    path = tmp_path / "data.json"
+    path.write_text(json.dumps(config), encoding="utf-8")
+    return path
 
 
-def make_appeals(model_dir, tmp_path, opa, **overrides) -> Appeals:
-    settings = Settings(
+@pytest.fixture
+def settings(model_dir, tmp_path, opa, corax_config):
+    return Settings(
         model_dir=model_dir,
+        corax_config=corax_config,
         opa_path=opa,
         generated_dir=tmp_path / "generated",
-        state_dir=tmp_path / "state",
-        **overrides,
+        appeals_dir=tmp_path / "appeals",
+        tier_limits=TierLimits(max_users=1, max_pairs=1, max_mean_risk=1.0),
     )
-    return Appeals(settings, RiskModel.load(model_dir), GraphData.load(model_dir))
 
 
-def number_of(state, predicates) -> int:
-    return next(c["number"] for c in state["candidates"] if c["predicates"] == predicates)
+@pytest.fixture
+def client(settings):
+    with TestClient(create_app(settings), headers=ADMIN) as client:
+        yield client
 
 
-def events(appeals) -> list[str]:
-    return [json.loads(line)["event"] for line in appeals.audit.read_text().splitlines()]
+def create(client):
+    response = client.post("/corax/appeals", json=APPEAL, headers=ADMIN)
+    assert response.status_code == 201, response.json()
+    return response.json()
 
 
-def test_submit_writes_the_exception_and_lists_candidates(appeal_model, tmp_path, opa):
-    appeals = make_appeals(appeal_model, tmp_path, opa)
+def index_of(record, pattern):
+    return next(c["index"] for c in record["candidates"] if c["pattern"] == pattern)
 
-    state = appeals.submit("appeal-1", "budi", "fajar", "read", "admin_1")
 
-    assert state["status"] == "awaiting_choice"
-    exception = (tmp_path / "generated" / "appeal-1-exception.rego").read_text()
-    assert "package app.exceptions" in exception
+def test_appeal_applies_the_exception_at_once(client, settings):
+    record = create(client)
+
+    assert record["id"] == "appeal-0001"
+    assert record["status"] == "exception_applied"
+    exception = (settings.generated_dir / "appeal-0001-exception.rego").read_text(encoding="utf-8")
     assert 'input.user.id == "budi"' in exception
-    assert number_of(state, HEAD_RULE) >= 1
-    # narrowest first, as in scripts/similar_cases.py
-    pairs = [c["pairs"] for c in state["candidates"]]
+    assert 'input.resource.id == "candra"' in exception
+    assert 'input.action == "read_grades"' in exception
+    assert [e["event"] for e in record["history"]] == ["created", "exception_applied"]
+    assert all(e["by"] == "admin_rina" for e in record["history"])
+
+
+def test_appeal_lists_neighbours_and_candidates_narrowest_first(client):
+    record = create(client)
+
+    assert record["neighbours"]
+    assert [c["index"] for c in record["candidates"]] == list(range(1, len(record["candidates"]) + 1))
+    pairs = [c["pairs"] for c in record["candidates"]]
     assert pairs == sorted(pairs)
-    assert state["approved_by"] == "admin_1"
-    assert events(appeals) == ["approved", "exception_applied", "candidates"]
-    assert json.loads((tmp_path / "state" / "appeals" / "appeal-1.json").read_text()) == state
+    assert HEAD_RULE in [c["pattern"] for c in record["candidates"]]
 
 
-def test_small_tier_rule_is_applied_at_once(appeal_model, tmp_path, opa):
-    appeals = make_appeals(appeal_model, tmp_path, opa)
-    state = appeals.submit("appeal-1", "budi", "fajar", "read", "admin_1")
+def test_appeals_get_increasing_ids_and_can_be_read_back(client):
+    first, second = create(client), create(client)
 
-    state = appeals.pick("appeal-1", number_of(state, HEAD_RULE), "admin_1")
-
-    assert state["status"] == "applied"
-    assert state["picked"]["tier"] == "small"
-    # the only new pair: sari, head of SI, reads gita (dewi she already reads)
-    assert (state["picked"]["users"], state["picked"]["pairs"]) == (1, 1)
-    assert all(check["ok"] for check in state["validation"])
-    rule = (tmp_path / "generated" / "appeal-1-rule.rego").read_text()
-    assert rule == state["picked"]["rule"]
-    assert "package app.generated" in rule
-    assert events(appeals)[-2:] == ["picked", "rule_applied"]
+    assert (first["id"], second["id"]) == ("appeal-0001", "appeal-0002")
+    assert client.get("/corax/appeals/appeal-0002").json() == second
 
 
-def test_large_tier_waits_for_confirmation(appeal_model, tmp_path, opa):
-    appeals = make_appeals(appeal_model, tmp_path, opa, tier_limits=TierLimits(max_users=0))
-    state = appeals.submit("appeal-1", "budi", "fajar", "read", "admin_1")
+def test_small_rule_is_validated_and_written(client, settings):
+    record = create(client)
 
-    state = appeals.pick("appeal-1", number_of(state, HEAD_RULE), "admin_1")
-
-    assert state["status"] == "awaiting_confirmation"
-    assert state["picked"]["reasons"] == ["1 users > 0"]
-    assert not (tmp_path / "generated" / "appeal-1-rule.rego").exists()
-
-    state = appeals.confirm("appeal-1", "admin_2")
-
-    assert state["status"] == "applied"
-    assert state["confirmed_by"] == "admin_2"
-    assert (tmp_path / "generated" / "appeal-1-rule.rego").exists()
-
-
-def test_rejected_appeal_keeps_only_the_exception(appeal_model, tmp_path, opa):
-    appeals = make_appeals(appeal_model, tmp_path, opa, tier_limits=TierLimits(max_users=0))
-    state = appeals.submit("appeal-1", "budi", "fajar", "read", "admin_1")
-    appeals.pick("appeal-1", number_of(state, HEAD_RULE), "admin_1")
-
-    state = appeals.reject("appeal-1", "admin_1")
-
-    assert state["status"] == "rejected"
-    assert sorted(p.name for p in (tmp_path / "generated").iterdir()) == [
-        "appeal-1-exception.rego"
-    ]
-    with pytest.raises(AppealError) as error:
-        appeals.confirm("appeal-1", "admin_1")
-    assert error.value.status == 409
-
-
-def test_failed_app_tests_reject_the_rule(appeal_model, tmp_path, opa):
-    # an application test that the head-of-program rule breaks: sari must never read gita
-    policy = tmp_path / "policy"
-    policy.mkdir()
-    (policy / "guard_test.rego").write_text(
-        "package guard_test\n\n"
-        "test_sari_never_reads_gita if {\n"
-        '\tnot data.app.generated.allow with input as {"user": {"id": "sari"}, '
-        '"action": "read", "resource": {"id": "gita"}}\n'
-        f"\t\twith data.corax.graph as {json.dumps(STRUCTURE)}\n"
-        "}\n",
-        encoding="utf-8",
+    response = client.post(
+        f"/corax/appeals/{record['id']}/confirm", json={"candidate": index_of(record, HEAD_RULE)}, headers=ADMIN
     )
-    appeals = make_appeals(appeal_model, tmp_path, opa, policy_dir=policy)
-    state = appeals.submit("appeal-1", "budi", "fajar", "read", "admin_1")
 
-    state = appeals.pick("appeal-1", number_of(state, HEAD_RULE), "admin_1")
+    assert response.status_code == 200, response.json()
+    confirmed = response.json()
+    assert confirmed["status"] == "rule_applied"
+    assert confirmed["chosen"]["scope"]["tier"] == "small"
+    assert all(check["ok"] for check in confirmed["validation"])
+    rule = (settings.generated_dir / "appeal-0001-rule.rego").read_text(encoding="utf-8")
+    assert rule.startswith("package app.generated")
+    assert '"head" in data.corax.graph[input.user.id]["holds"]' in rule
+    assert confirmed["history"][-1] == {**confirmed["history"][-1], "event": "rule_applied", "by": "admin_rina"}
 
-    assert state["status"] == "rule_rejected"
-    assert [(c["name"], c["ok"]) for c in state["validation"]][-1] == ("app tests", False)
-    assert not (tmp_path / "generated" / "appeal-1-rule.rego").exists()
+
+def test_large_rule_needs_acknowledgement(client, settings):
+    record = create(client)
+    broad = index_of(record, "user holds head")
+    url = f"/corax/appeals/{record['id']}/confirm"
+
+    refused = client.post(url, json={"candidate": broad})
+
+    assert refused.status_code == 409
+    assert refused.json()["scope"]["tier"] == "large"
+    assert not (settings.generated_dir / "appeal-0001-rule.rego").exists()
+
+    accepted = client.post(url, json={"candidate": broad, "acknowledge_scope": True})
+
+    assert accepted.status_code == 200
+    assert accepted.json()["status"] == "rule_applied"
 
 
-def test_user_without_relations_gets_only_the_exception(appeal_model, tmp_path, opa):
-    appeals = make_appeals(appeal_model, tmp_path, opa)
+def test_admin_can_keep_only_the_exception(client, settings):
+    record = create(client)
 
-    state = appeals.submit("appeal-1", "nina", "gita", "read", "admin_1")
+    response = client.post(f"/corax/appeals/{record['id']}/confirm", json={"candidate": None})
 
-    assert state["status"] == "exception_only"
-    assert state["candidates"] == []
-    with pytest.raises(AppealError) as error:
-        appeals.pick("appeal-1", 1, "admin_1")
-    assert error.value.status == 409
+    assert response.json()["status"] == "exception_only"
+    assert not (settings.generated_dir / "appeal-0001-rule.rego").exists()
+    assert (settings.generated_dir / "appeal-0001-exception.rego").exists()
+
+
+def test_an_appeal_is_confirmed_only_once(client):
+    record = create(client)
+    url = f"/corax/appeals/{record['id']}/confirm"
+    client.post(url, json={"candidate": None})
+
+    again = client.post(url, json={"candidate": 1})
+
+    assert again.status_code == 409
+
+
+def test_rule_that_fails_validation_is_not_written(client, settings, monkeypatch):
+    import appeals
+
+    monkeypatch.setattr(appeals, "render_rule", lambda *args, **kwargs: "package app.generated\n\nallow if true\n")
+    record = create(client)
+
+    response = client.post(
+        f"/corax/appeals/{record['id']}/confirm", json={"candidate": index_of(record, HEAD_RULE)}
+    )
+
+    assert response.status_code == 422
+    assert response.json()["validation"][-1] == {**response.json()["validation"][-1], "ok": False}
+    assert client.get(f"/corax/appeals/{record['id']}").json()["status"] == "rule_rejected"
+    assert not (settings.generated_dir / "appeal-0001-rule.rego").exists()
 
 
 @pytest.mark.parametrize(
-    ("call", "status"),
+    ("body", "status"),
     [
-        (lambda a: a.submit("appeal-1", "budi", "fajar", "read", "admin_1"), 409),
-        (lambda a: a.submit("appeal-2", "nobody", "fajar", "read", "admin_1"), 404),
-        (lambda a: a.submit("appeal-2", "budi", "nothing", "read", "admin_1"), 404),
-        # budi already reads ani: there is nothing to appeal
-        (lambda a: a.submit("appeal-2", "budi", "ani", "read", "admin_1"), 409),
-        (lambda a: a.submit("../evil", "budi", "fajar", "read", "admin_1"), 400),
-        (lambda a: a.pick("appeal-1", 999, "admin_1"), 400),
-        (lambda a: a.pick("appeal-9", 1, "admin_1"), 404),
-        (lambda a: a.confirm("appeal-1", "admin_1"), 409),
+        ({**APPEAL, "user": "nobody"}, 404),
+        ({**APPEAL, "object": "nothing"}, 404),
+        ({"user": "budi", "object": "candra"}, 422),
     ],
 )
-def test_invalid_calls_are_refused(appeal_model, tmp_path, opa, call, status):
-    appeals = make_appeals(appeal_model, tmp_path, opa)
-    appeals.submit("appeal-1", "budi", "fajar", "read", "admin_1")
-
-    with pytest.raises(AppealError) as error:
-        call(appeals)
-    assert error.value.status == status
+def test_invalid_appeals_are_rejected(client, body, status):
+    assert client.post("/corax/appeals", json=body).status_code == status
 
 
-# --- HTTP API -------------------------------------------------------------------------
+@pytest.mark.parametrize("appeal_id", ["appeal-9999", "..%2Fsecret", "appeal 1"])
+def test_unknown_or_invalid_appeal_ids_are_not_found(client, appeal_id):
+    assert client.get(f"/corax/appeals/{appeal_id}").status_code == 404
 
 
-def bearer(sub: str) -> dict:
-    def part(data: dict) -> str:
-        return base64.urlsafe_b64encode(json.dumps(data).encode()).rstrip(b"=").decode()
+def test_candidate_out_of_range_is_rejected(client):
+    record = create(client)
 
-    # not signed: OPA verifies the token at the gateway, ai-corax only reads "sub"
-    return {"Authorization": f"Bearer {part({'alg': 'HS256'})}.{part({'sub': sub})}.x"}
+    response = client.post(f"/corax/appeals/{record['id']}/confirm", json={"candidate": 99})
 
-
-def test_appeal_through_the_api(appeal_model, tmp_path, opa):
-    settings = Settings(
-        model_dir=appeal_model,
-        opa_path=opa,
-        generated_dir=tmp_path / "generated",
-        state_dir=tmp_path / "state",
-    )
-    with TestClient(create_app(settings)) as client:
-        assert client.get("/health").json()["appeals"] is True
-        body = {"appeal_id": "appeal-1", "user": "budi", "object": "fajar", "action": "read"}
-        state = client.post("/appeals", json=body, headers=bearer("admin_1")).json()
-        assert state["approved_by"] == "admin_1"
-
-        number = number_of(state, HEAD_RULE)
-        response = client.post("/appeals/appeal-1/pick", json={"candidate": number},
-                               headers=bearer("admin_2"))  # fmt: skip
-        assert response.status_code == 200
-        assert response.json()["status"] == "applied"
-        assert response.json()["picked"]["by"] == "admin_2"
-        assert client.get("/appeals/appeal-1").json()["status"] == "applied"
-        assert client.post("/appeals/appeal-1/reject").status_code == 409
-        assert client.get("/appeals/appeal-9").status_code == 404
+    assert response.status_code == 422
 
 
-@pytest.mark.parametrize(
-    "body",
-    [
-        {"appeal_id": "../x", "user": "budi", "object": "fajar"},
-        {"appeal_id": "a", "user": "", "object": "fajar"},
-        {"appeal_id": "a", "user": "budi", "object": "fajar", "action": 'read"}'},
-    ],
-)
-def test_invalid_appeal_body_is_rejected(appeal_model, tmp_path, body):
-    settings = Settings(model_dir=appeal_model, state_dir=tmp_path / "state",
-                        generated_dir=tmp_path / "generated")  # fmt: skip
-    with TestClient(create_app(settings)) as client:
-        assert client.post("/appeals", json=body).status_code == 422
+def test_appeals_are_disabled_without_graph_json(model_dir, settings):
+    (model_dir / "graph.json").unlink()
 
-
-def test_appeals_are_off_without_graph(model_dir, tmp_path):
-    settings = Settings(model_dir=model_dir, state_dir=tmp_path / "state")
-    with TestClient(create_app(settings)) as client:
+    with TestClient(create_app(settings), headers=ADMIN) as client:
+        assert client.post("/corax/appeals", json=APPEAL).status_code == 503
         assert client.get("/health").json()["appeals"] is False
-        body = {"appeal_id": "appeal-1", "user": "u1", "object": "r1"}
-        assert client.post("/appeals", json=body).status_code == 503
+        assert client.post("/risk", json={"user": "budi", "object": "ani"}).status_code == 200
+
+
+def test_appeals_require_an_admin_token(settings):
+    with TestClient(create_app(settings)) as anonymous:
+        assert anonymous.post("/corax/appeals", json=APPEAL).status_code == 401
+        assert anonymous.get("/corax/appeals/appeal-0001").status_code == 401
+        assert anonymous.post("/corax/appeals/appeal-0001/confirm", json={}).status_code == 401
+        assert anonymous.post("/corax/appeals", json=APPEAL, headers=bearer("bob")).status_code == 403
+    assert not (settings.generated_dir).exists()
+
+
+def test_a_forged_identity_header_is_ignored(settings):
+    with TestClient(create_app(settings)) as client:
+        spoofed = {**bearer("bob"), "x-corax-user": "admin_rina"}
+        assert client.post("/corax/appeals", json=APPEAL, headers=spoofed).status_code == 403
+
+        record = client.post("/corax/appeals", json=APPEAL, headers={**ADMIN, "x-corax-user": "mallory"}).json()
+        assert {e["by"] for e in record["history"]} == {"admin_rina"}
+
+
+def test_appeals_fail_closed_without_corax_config(settings):
+    unconfigured = Settings(**{**settings.__dict__, "corax_config": None})
+
+    with TestClient(create_app(unconfigured), headers=ADMIN) as client:
+        assert client.post("/corax/appeals", json=APPEAL).status_code == 503
+        assert client.post("/risk", json={"user": "budi", "object": "ani"}).status_code == 200

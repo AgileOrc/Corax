@@ -60,10 +60,11 @@ Admin ──► Envoy ──► OPA (is the caller an admin?) ──► AI-Corax
 
 `POST /appeals` returns the mined pattern, its scope and tier, and a status (`applied` or `awaiting_confirmation`).
 
-As built (`ai-corax/appeals.py`): `POST /appeals` applies the exception and returns the candidate patterns, narrowest
-first; the admin picks one (`POST /appeals/{id}/pick`, as in `scripts/similar_cases.py --pick`), which sets the tier.
-The rule is written by `rules.py` (deterministic, no LLM yet) and checked by `validate.py`. `POST /appeals/{id}/reject`
-stops an open appeal; the exception stays. The tier limits are those of `tier.py` (users, pairs, mean risk).
+As built (`ai-corax/appeals.py`, see [ai-corax/README.md](../ai-corax/README.md)): `POST /corax/appeals` applies the
+exception and returns the candidate patterns, narrowest first; the admin confirms one
+(`POST /corax/appeals/{id}/confirm`), and a large rule needs `acknowledge_scope`. The rule is written by `rules.py`
+(deterministic, no LLM yet) and checked by `validate.py`; `"candidate": null` keeps only the exception. The tier limits
+are those of `tier.py` (users, pairs, mean risk).
 Policy files are changed only on disk. OPA's REST API is never used for writes and is not exposed.
 
 ## 3. Model 1: HGNN

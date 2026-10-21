@@ -55,8 +55,15 @@ route_matches(path) if {
 	}
 }
 
+# Corax's own admin routes (served by ai-corax); applications do not list them in config.routes.
+corax_routes := [
+	{"method": "POST", "path": "/corax/appeals", "action": "corax.appeal.create", "resource_type": "appeal"},
+	{"method": "GET", "path": "/corax/appeals/:id", "action": "corax.appeal.read", "resource_type": "appeal"},
+	{"method": "POST", "path": "/corax/appeals/:id/confirm", "action": "corax.appeal.confirm", "resource_type": "appeal"},
+]
+
 matched_routes contains r if {
-	some r in config.routes
+	some r in array.concat(object.get(config, "routes", []), corax_routes)
 	r.method == http_request.method
 	route_matches(r.path)
 }

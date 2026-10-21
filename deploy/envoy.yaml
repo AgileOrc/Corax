@@ -1,6 +1,6 @@
 # Envoy, the policy enforcement point. Every request is checked by OPA (ext_authz, gRPC) before it
-# is routed: /documents/... to the application, /appeals... to AI-Corax. If OPA is unreachable or
-# fails, the request is denied (failure_mode_allow: false); a denied request gets 403.
+# is routed: /documents/... to the application, /corax/... (the admin API) to ai-corax. If OPA is
+# unreachable or fails, the request is denied (failure_mode_allow: false); a denied request gets 403.
 static_resources:
   listeners:
     - name: gateway
@@ -22,7 +22,7 @@ static_resources:
                     - name: corax
                       domains: ["*"]
                       routes:
-                        - match: {prefix: "/appeals"}
+                        - match: {prefix: "/corax/"}
                           route: {cluster: ai_corax}
                         - match: {prefix: "/documents/"}
                           route: {cluster: app}

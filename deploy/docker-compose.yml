@@ -3,10 +3,11 @@
 # Ports: gateway 8080 and console 8090, or CORAX_GATEWAY_PORT / CORAX_CONSOLE_PORT.
 #
 #   client -> envoy:8080 -> opa (policy/corax + demo-app/policy + config + graph, AI check)
-#                        -> app (/documents/...) or ai-corax (/appeals...)
+#                        -> app (/documents/...) or ai-corax (/corax/appeals...)
 #
 # ai-corax writes exceptions and generated rules into the "runtime" volume; OPA loads it with
-# --watch, so an approved appeal becomes policy without a restart.
+# --watch, so an approved appeal becomes policy without a restart. ai-corax verifies the admin's
+# JWT itself with the same corax-config.json that OPA loads.
 name: corax
 
 services:
@@ -16,12 +17,14 @@ services:
       dockerfile: deploy/ai-corax.Dockerfile
     environment:
       CORAX_MODEL_DIR: /model
+      CORAX_CONFIG: /config/corax-config.json
       OPA_PATH: /usr/local/bin/opa
       POLICY_DIR: /policy/app
       GENERATED_DIR: /runtime/generated
-      STATE_DIR: /state
+      APPEALS_DIR: /state/appeals
     volumes:
       - ../output/gateway/hgnn:/model:ro
+      - ./corax-config.json:/config/corax-config.json:ro
       - ./demo-app/policy:/policy/app:ro
       - runtime:/runtime
       - state:/state

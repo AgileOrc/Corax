@@ -2,14 +2,15 @@
 
 Case 1, ordinary requests:  client -> Envoy -> OPA (rules; if they allow, ai-corax /risk)
                             -> the document store, or 403
-Case 2, approved appeals:   admin -> Envoy -> OPA (is the caller an admin?) -> ai-corax /appeals
-                            -> exact exception and candidate patterns -> the admin picks one
-                            -> validated rule (a file) -> OPA reloads
+Case 2, approved appeals:   admin -> Envoy -> OPA (is the caller an admin?) -> ai-corax
+                            /corax/appeals (checks the admin's JWT again) -> exact exception and
+                            candidate patterns -> the admin confirms one -> validated rule (a
+                            file) -> OPA reloads
 
 The data is the synthetic enterprise of scripts/make_enterprise.py; demo.json names the requests
-and the appeals. Acting as the admin, the script picks the pattern each scenario expects
-(scenarios.json) and confirms it when its tier is large; the engineer's one-off appeal is rejected,
-so only its exact exception applies.
+and the appeals. Acting as the admin, the script confirms the pattern each scenario expects
+(scenarios.json), acknowledging the scope when the rule is large; for the engineer's one-off appeal
+it confirms no pattern, so only the exact exception applies.
 
     python scripts/demo_gateway.py prepare    enterprise graph and HGNN -> output/gateway
     docker-compose -f deploy/docker-compose.yml up -d --build
@@ -83,7 +84,11 @@ def call(gateway: str, method: str, path: str, user: str | None, body: dict | No
         with urllib.request.urlopen(request, timeout=30) as response:
             return response.status, json.loads(response.read() or b"{}")
     except urllib.error.HTTPError as error:
-        return error.code, error.read().decode(errors="replace")
+        text = error.read().decode(errors="replace")
+        try:
+            return error.code, json.loads(text)
+        except ValueError:
+            return error.code, text
 
 
 def wait_until(condition, message: str, seconds: float = 60.0) -> None:
@@ -99,35 +104,37 @@ def wait_until(condition, message: str, seconds: float = 60.0) -> None:
 
 
 def handle_appeal(gateway: str, admin: str, appeal: dict, expected) -> None:
-    """Submit the appeal as the admin, then pick the expected pattern (or reject a one-off)."""
-    appeal_id = f"APL-{int(time.time())}-{appeal['scenario'].replace('_', '-')}"
-    body = {"appeal_id": appeal_id, "user": appeal["user"], "object": appeal["document"]}
-    status, state = call(gateway, "POST", "/appeals", admin, body)
-    if status != 200:
-        sys.exit(f"the appeal failed: {status} {state}")
-    print(f"   {appeal['name']}: exception applied, {len(state['candidates'])} candidate patterns")
-    if state["status"] != "awaiting_choice":
-        print(f"      {state['status']}")
-        return
+    """Create the appeal as the admin, then confirm the expected pattern (or keep only the
+    exception for a one-off). A large scope is confirmed again with acknowledge_scope."""
+    body = {"user": appeal["user"], "object": appeal["document"], "action": "read",
+            "reason": appeal["name"]}  # fmt: skip
+    status, record = call(gateway, "POST", "/corax/appeals", admin, body)
+    if status != 201:
+        sys.exit(f"the appeal failed: {status} {record}")
+    path = f"/corax/appeals/{record['id']}/confirm"
+    print(f"   {appeal['name']}: {record['id']}, exception applied, "
+          f"{len(record['candidates'])} candidate patterns")  # fmt: skip
 
     wanted = None if expected is None else {tuple(p.values()) for p in expected}
-    chosen = next((c for c in state["candidates"]
+    chosen = next((c for c in record["candidates"]
                    if {tuple(p.values()) for p in c["predicates"]} == wanted), None)  # fmt: skip
     if chosen is None:
-        status, state = call(gateway, "POST", f"/appeals/{appeal_id}/reject", admin)
-        print(f"      rejected by the admin: {state['status']} (only the exception applies)")
+        status, record = call(gateway, "POST", path, admin, {"candidate": None})
+        print(f"      no pattern confirmed: {record['status']}")
         return
-    path = f"/appeals/{appeal_id}/pick"
-    status, state = call(gateway, "POST", path, admin, {"candidate": chosen["number"]})
-    picked = state["picked"]
-    print(f"      picked #{chosen['number']}: {picked['pattern']}")
-    print(f"      tier {picked['tier']}: {picked['users']} users, {picked['pairs']} new pairs, "
-          f"mean risk {picked['mean_risk']:.2f}")  # fmt: skip
-    if state["status"] == "awaiting_confirmation":
-        status, state = call(gateway, "POST", f"/appeals/{appeal_id}/confirm", admin)
-        print(f"      confirmed by the admin ({'; '.join(picked['reasons'])})")
-    checks = ", ".join(c["name"] for c in state.get("validation", []) if c["ok"])
-    print(f"      {state['status']}" + (f" (validation: {checks})" if checks else ""))
+    print(f"      picked #{chosen['index']}: {chosen['pattern']}")
+    status, answer = call(gateway, "POST", path, admin, {"candidate": chosen["index"]})
+    if status == 409 and isinstance(answer, dict) and "scope" in answer:
+        scope = answer["scope"]
+        print(f"      tier {scope['tier']}: {scope['users']} users, {scope['pairs']} new pairs, "
+              f"mean risk {scope['mean_risk']:.2f} ({'; '.join(scope['reasons'])})")  # fmt: skip
+        status, answer = call(gateway, "POST", path, admin,
+                              {"candidate": chosen["index"], "acknowledge_scope": True})  # fmt: skip
+        print("      confirmed again with acknowledge_scope")
+    if status != 200:
+        sys.exit(f"the confirmation failed: {status} {answer}")
+    checks = ", ".join(c["name"] for c in answer.get("validation", []) if c["ok"])
+    print(f"      {answer['status']}" + (f" (validation: {checks})" if checks else ""))
 
 
 def run(gateway: str) -> None:
@@ -143,16 +150,19 @@ def run(gateway: str) -> None:
         return call(gateway, "GET", f"/documents/{document}", user)[0]
 
     print(f"waiting for the gateway at {gateway} ...")
-    wait_until(lambda: read(None, reads[0]["document"]) == 403, "the gateway did not answer")
+    # an allowed request, so a gateway that denies everything (OPA down) is not mistaken for ready
+    first = reads[0]
+    wait_until(lambda: read(first["user"], first["document"]) == 200,
+               "the gateway does not allow a permitted request; see docker-compose logs opa")  # fmt: skip
 
     print("\ncase 1: requests before the appeals")
     before = {s["name"]: read(s["user"], s["document"]) for s in reads}
 
     print("case 2: the appeals")
-    first = demo["appeals"][0]
-    body = {"appeal_id": "APL-not-admin", "user": first["user"], "object": first["document"]}
-    status, _ = call(gateway, "POST", "/appeals", first["user"], body)
-    print(f"   POST /appeals as {first['user']} (not an admin): {status}")
+    appeal = demo["appeals"][0]
+    body = {"user": appeal["user"], "object": appeal["document"], "action": "read"}
+    status, _ = call(gateway, "POST", "/corax/appeals", appeal["user"], body)
+    print(f"   POST /corax/appeals as {appeal['user']} (not an admin): {status}")
     for appeal in demo["appeals"]:
         handle_appeal(gateway, admin, appeal, expected[appeal["scenario"]])
         user, document = appeal["user"], appeal["document"]

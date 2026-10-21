@@ -59,7 +59,7 @@
   <h1>Corax Demo</h1>
   <p>Pick who you are, then send requests. Every request goes through the real gateway.</p>
   <div class="flow"><span>Browser</span>→<span>Envoy (PEP)</span>→<span>OPA (PDP)</span>→<span>ai-corax /risk</span>→<span>Document store</span>
-    · <span>Admin</span>→<span>ai-corax /appeals</span>→<span>pick a pattern</span>→<span>validated rule</span>→<span>OPA reload</span></div>
+    · <span>Admin</span>→<span>ai-corax /corax/appeals</span>→<span>pick a pattern</span>→<span>validated rule</span>→<span>OPA reload</span></div>
 </header>
 <main>
   <div class="col">
@@ -111,7 +111,6 @@
 const $ = (id) => document.getElementById(id);
 let people = { graph: {}, admins: [], risk_threshold: null };
 let demo = { reads: [], appeals: [], admin: "admin_01" };
-let shownCandidates = 10;
 
 // "department_sales" -> "sales", "role_security_officer" -> "security officer"
 const short = (id) => (id || "").replace(/^[a-z]+_/, "").replace(/_/g, " ");
@@ -224,89 +223,98 @@ async function read() {
   $("readResult").innerHTML = explainRead(answer);
 }
 
-const STATUS = { awaiting_choice: ["warn", "Exception applied · pick a pattern"],
-                 exception_only: ["warn", "Exception only (no pattern to generalise)"],
-                 awaiting_confirmation: ["warn", "Waiting for confirmation (large tier)"],
-                 applied: ["ok", "Rule applied"], rule_rejected: ["no", "Rule failed validation"],
-                 rejected: ["no", "Rejected: only the exception applies"] };
+const STATUS = { exception_applied: ["warn", "Exception applied · pick a pattern"],
+                 exception_only: ["warn", "Only the exception: nothing generalised"],
+                 rule_applied: ["ok", "Rule applied"], rule_rejected: ["no", "Rule failed validation"] };
+let current = null;  // the appeal record being handled (ai-corax's answer to POST /corax/appeals)
 
-function candidatesTable(a) {
-  const rows = a.candidates.slice(0, shownCandidates).map((c) => `<tr>
-      <td class="num">${c.number}</td><td class="num">${c.users ?? "?"}</td>
+function candidatesTable(record) {
+  const rows = record.candidates.map((c) => `<tr>
+      <td class="num">${c.index}</td><td class="num">${c.users ?? "?"}</td>
       <td class="num">${c.estimated ? "~" : ""}${c.pairs}</td><td class="num">${Math.round(c.support * 100)}%</td>
       <td><code>${escapeHtml(c.pattern)}</code></td>
-      <td><button class="small" data-pick="${c.number}">Pick</button></td></tr>`).join("");
-  const more = a.candidates.length > shownCandidates
-    ? `<button class="ghost" id="more">Show all ${a.candidates.length} candidates</button>` : "";
+      <td><button class="small" data-pick="${c.index}">Pick</button></td></tr>`).join("");
   return `<p class="why">Candidate patterns, narrowest first. <span class="muted">users / pairs: who and how many
     (user, document) pairs the rule would open · kNN: share of the similar cases it covers.</span></p>
-    <table><tr><th>#</th><th>users</th><th>pairs</th><th>kNN</th><th>pattern</th><th></th></tr>${rows}</table>${more}
-    <button id="reject" class="secondary">Reject: keep only the exception</button>`;
+    <table><tr><th>#</th><th>users</th><th>pairs</th><th>kNN</th><th>pattern</th><th></th></tr>${rows}</table>
+    <button id="keepException" class="secondary">Reject: keep only the exception</button>`;
 }
 
-function explainAppeal(answer) {
-  if (answer.status !== 200) {
-    const detail = answer.body && typeof answer.body === "object" ? (answer.body.detail || "") : "";
-    return `<span class="badge no">${answer.status} Denied</span><p class="why">${answer.status === 403 ?
-      "The gateway refused it: only admins may handle appeals. Sign in as the admin at step 1." : escapeHtml(JSON.stringify(detail))}</p>`;
+function scopeText(scope) {
+  return `Tier <b>${scope.tier}</b> · ${plural(scope.users, "user")} · ${plural(scope.pairs, "new pair")}` +
+    (scope.mean_risk != null ? ` · mean risk ${Number(scope.mean_risk).toFixed(2)}` : "");
+}
+
+function validationText(checks) {
+  return `<p class="why muted">Validation: ${checks.map((c) => `${c.ok ? "✓" : "✗"} ${c.name}` +
+    (c.ok ? "" : ` (${escapeHtml(c.detail)})`)).join(" · ")}</p>`;
+}
+
+function header(record) {
+  const [kind, text] = STATUS[record.status] || ["warn", record.status];
+  const a = record.appeal;
+  return `<span class="badge ${kind}">${text}</span> <span class="muted">${record.id}</span>
+    <p class="why">Exact exception, applied at once: <code>${a.user} → ${a.action} → ${a.object}</code></p>`;
+}
+
+function explainAppeal(answer, picked) {
+  const body = answer.body && typeof answer.body === "object" ? answer.body : {};
+  if (answer.status === 409 && body.scope && current) {
+    return header(current) + `<p class="why"><span class="badge warn">Large scope</span> Candidate #${picked}:
+      <code>${escapeHtml(current.candidates[picked - 1].pattern)}</code><br>${scopeText(body.scope)}</p>
+      <p class="why muted">Needs your acknowledgement: ${body.scope.reasons.map(escapeHtml).join("; ")}</p>
+      <button id="acknowledge">Confirm large scope</button><button id="keepException" class="secondary">Reject: keep only the exception</button>`;
   }
-  const a = answer.body;
-  const [kind, text] = STATUS[a.status] || ["warn", a.status];
-  let html = `<span class="badge ${kind}">${text}</span> <span class="muted">${a.appeal_id}</span>`;
-  html += `<p class="why">Exact exception, applied at once: <code>${a.user} → ${a.action} → ${a.object}</code></p>`;
-  if (a.status === "awaiting_choice") html += candidatesTable(a);
-  const p = a.picked;
-  if (p) {
-    html += `<p class="why">Picked #${p.number}: <code>${escapeHtml(p.pattern)}</code><br>Tier <b>${p.tier}</b> · ${plural(p.users, "user")} ·
-      ${plural(p.pairs, "new pair")}` + (p.mean_risk != null ? ` · mean risk ${Number(p.mean_risk).toFixed(2)}` : "") + "</p>";
-    if (p.reasons.length) html += `<p class="why muted">Needs confirmation: ${p.reasons.map(escapeHtml).join("; ")}</p>`;
-    html += `<pre>${escapeHtml(p.rule)}</pre>`;
+  if (answer.status === 422 && body.validation && current) {
+    return header({ ...current, status: "rule_rejected" }) + validationText(body.validation) +
+      '<p class="why muted">Nothing was written; only the exception applies.</p>';
   }
-  if (a.validation) {
-    html += `<p class="why muted">Validation: ${a.validation.map((c) => `${c.ok ? "✓" : "✗"} ${c.name}` +
-      (c.ok ? "" : ` (${escapeHtml(c.detail)})`)).join(" · ")}</p>`;
+  if (answer.status >= 400) {
+    const why = answer.status === 403 && !body.error
+      ? "The gateway refused it: only admins may handle appeals. Sign in as the admin at step 1."
+      : escapeHtml(body.error || JSON.stringify(body.detail || answer.body));
+    return `<span class="badge no">${answer.status} Denied</span><p class="why">${why}</p>`;
   }
-  if (a.status === "awaiting_confirmation") {
-    html += `<button id="confirm">Confirm rule</button><button id="reject" class="secondary">Reject rule</button>`;
+  const record = body;
+  current = record;
+  let html = header(record);
+  if (record.status === "exception_applied") html += candidatesTable(record);
+  if (record.chosen) {
+    html += `<p class="why">Picked #${record.chosen.candidate}: <code>${escapeHtml(record.chosen.pattern)}</code><br>
+      ${scopeText(record.chosen.scope)}</p>`;
   }
+  if (record.validation) html += validationText(record.validation);
   return html;
 }
 
-function showAppeal(answer) {
-  $("appealResult").innerHTML = explainAppeal(answer);
-  if (answer.status !== 200) return;
-  const id = answer.body.appeal_id;
-  const step = async (name, candidate) => {
+function showAppeal(answer, picked) {
+  $("appealResult").innerHTML = explainAppeal(answer, picked);
+  if (!current) return;
+  const confirm = async (candidate, acknowledge) => {
     $("appealResult").insertAdjacentHTML("beforeend", '<p class="muted">Working…</p>');
-    showAppeal(await api("/api/appeals/" + name, { admin: $("who").value, appeal_id: id, candidate }));
+    showAppeal(await api("/api/appeals/confirm", { admin: $("who").value, appeal_id: current.id,
+                                                    candidate, acknowledge_scope: acknowledge }), candidate);
     refresh();
   };
-  document.querySelectorAll("[data-pick]").forEach((b) => { b.onclick = () => step("pick", Number(b.dataset.pick)); });
-  if ($("more")) $("more").onclick = () => { shownCandidates = 1000; showAppeal(answer); };
-  if ($("confirm")) $("confirm").onclick = () => step("confirm");
-  if ($("reject")) $("reject").onclick = () => step("reject");
+  document.querySelectorAll("[data-pick]").forEach((b) => { b.onclick = () => confirm(Number(b.dataset.pick), false); });
+  if ($("acknowledge")) $("acknowledge").onclick = () => confirm(picked, true);
+  if ($("keepException")) $("keepException").onclick = () => confirm(null, false);
 }
 
 async function appeal() {
-  shownCandidates = 10;
+  current = null;
   $("appealResult").innerHTML = '<span class="muted">Working: exception → validation → similar cases → candidate patterns…</span>';
   showAppeal(await api("/api/appeals", { admin: $("who").value, user: $("appellant").value,
                                           document: $("appealDocument").value.trim() }));
   refresh();
 }
 
-const EVENTS = { approved: "Appeal approved", exception_applied: "Exception written", candidates: "Candidate patterns",
-                 picked: "Pattern picked", awaiting_confirmation: "Waiting for confirmation", confirmed: "Confirmed",
-                 rule_applied: "Rule written", rule_rejected: "Rule failed validation", rejected: "Rejected",
-                 exception_rejected: "Exception failed validation" };
+const EVENTS = { created: "Appeal created", exception_applied: "Exception written", rule_applied: "Rule written",
+                 exception_only: "Kept only the exception", rule_rejected: "Rule failed validation" };
 
 function summary(e) {
-  if (e.event === "approved") return `${e.user} → ${e.object} by ${e.by}`;
-  if (e.event === "exception_applied" || e.event === "rule_applied") return e.file;
-  if (e.event === "candidates") return `${e.found} found`;
-  if (e.event === "picked") return `#${e.number} ${e.pattern} (tier ${e.tier}, ${plural(e.users, "user")}, ${plural(e.pairs, "pair")}) by ${e.by}`;
-  if (e.event === "awaiting_confirmation") return (e.reasons || []).join("; ");
-  if (e.event === "confirmed" || e.event === "rejected") return `by ${e.by}`;
+  if (e.event === "created") return `${e.user} → ${e.object}`;
+  if (e.event === "rule_applied") return e.pattern || "";
   return "";
 }
 
@@ -321,8 +329,8 @@ async function refresh() {
     : '<p class="muted">None yet. Approve an appeal at step 3.</p>';
   $("policy").innerHTML = `<b>Exceptions</b> <span class="muted">(app.exceptions, no AI check)</span>${exceptions}` +
                           `<b>Generated rules</b> <span class="muted">(app.generated, AI check applies)</span>${rules}`;
-  $("log").innerHTML = p.log.map((e) => `<li><time>${e.time.slice(11, 19)}</time><b>${EVENTS[e.event] || e.event}</b>
-    <span class="muted">${e.appeal_id}</span> ${escapeHtml(summary(e))}</li>`).join("");
+  $("log").innerHTML = p.log.map((e) => `<li><time>${e.at.slice(11, 19)}</time><b>${EVENTS[e.event] || e.event}</b>
+    <span class="muted">${e.id}</span> ${escapeHtml(summary(e))}${e.by ? ` <span class="muted">by ${escapeHtml(e.by)}</span>` : ""}</li>`).join("");
 }
 
 $("who").onchange = showWho;

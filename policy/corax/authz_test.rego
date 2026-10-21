@@ -18,6 +18,7 @@ fixture_config := {
 		{"method": "GET", "path": "/students/:id", "action": "read_personal_data", "resource_type": "student"},
 	],
 	"ai": {"url": "http://ai-corax.test", "timeout": "20ms"},
+	"admin": {"users": ["alice"]},
 }
 
 now_s := round(time.now_ns() / 1000000000)
@@ -190,7 +191,7 @@ test_policy_allow_and_low_risk_allowed if {
 		with data.corax.config as fixture_config
 		with data.app.authz.allow as true
 		with http.send as risk_low
-	authz.result == {"allowed": true, "dynamic_metadata": {"corax_reason": "allowed", "corax_risk": 0.1}} with input as read_grades
+	authz.result == {"allowed": true, "headers": {"x-corax-user": "alice"}, "dynamic_metadata": {"corax_reason": "allowed", "corax_risk": 0.1}} with input as read_grades
 		with data.corax.config as fixture_config
 		with data.app.authz.allow as true
 		with http.send as risk_low
@@ -201,7 +202,7 @@ test_policy_allow_and_high_risk_denied if {
 		with data.corax.config as fixture_config
 		with data.app.authz.allow as true
 		with http.send as risk_high
-	authz.result == {"allowed": false, "dynamic_metadata": {"corax_reason": "high AI risk", "corax_risk": 0.99}} with input as read_grades
+	authz.result == {"allowed": false, "headers": {}, "dynamic_metadata": {"corax_reason": "high AI risk", "corax_risk": 0.99}} with input as read_grades
 		with data.corax.config as fixture_config
 		with data.app.authz.allow as true
 		with http.send as risk_high
@@ -283,7 +284,7 @@ test_exception_skips_ai_check if {
 }
 
 test_exception_reason if {
-	authz.result == {"allowed": true, "dynamic_metadata": {"corax_reason": "allowed by appeal exception"}} with input as read_grades
+	authz.result == {"allowed": true, "headers": {"x-corax-user": "alice"}, "dynamic_metadata": {"corax_reason": "allowed by appeal exception"}} with input as read_grades
 		with data.corax.config as fixture_config
 		with data.app.exceptions.allow as true
 }
@@ -295,65 +296,62 @@ test_exception_still_needs_valid_token if {
 		with data.app.exceptions.allow as true
 }
 
-# --- Admin API (ai-corax /appeals) ------------------------------------------------------
+# --- Admin routes (appeals) -------------------------------------------------------------
 
-admin_config := object.union(fixture_config, {
-	"routes": array.concat(fixture_config.routes, [
-		{"method": "POST", "path": "/appeals", "action": "submit_appeal", "resource_type": "appeal"},
-		{"method": "POST", "path": "/appeals/:id/pick", "action": "pick_candidate", "resource_type": "appeal"},
-	]),
-	"admins": ["root"],
-})
+alice_token := concat(" ", ["Bearer", sign(valid_claims, secret)])
 
-as_user(sub, method, path) := envoy_input(method, path, concat(" ", ["Bearer", sign(object.union(valid_claims, {"sub": sub}), secret)]))
+bob_token := concat(" ", ["Bearer", sign(object.union(valid_claims, {"sub": "bob"}), secret)])
 
-test_admin_submits_appeal_without_ai_check if {
-	inp := as_user("root", "POST", "/appeals")
-	authz.result == {"allowed": true, "dynamic_metadata": {"corax_reason": "allowed admin request"}} with input as inp
-		with data.corax.config as admin_config
-		with http.send as risk_high
-	not authz.risk_response with input as inp
-		with data.corax.config as admin_config
-		with http.send as risk_high
+test_admin_can_create_read_and_confirm_appeals if {
+	every method_path in [["POST", "/corax/appeals"], ["GET", "/corax/appeals/appeal-0001"], ["POST", "/corax/appeals/appeal-0001/confirm"]] {
+		authz.allow with input as envoy_input(method_path[0], method_path[1], alice_token)
+			with data.corax.config as fixture_config
+		authz.reason == "admin action" with input as envoy_input(method_path[0], method_path[1], alice_token)
+			with data.corax.config as fixture_config
+	}
 }
 
-test_admin_route_takes_appeal_id_from_path if {
-	inp := as_user("root", "POST", "/appeals/appeal-7/pick")
-	authz.allow with input as inp
-		with data.corax.config as admin_config
+test_admin_route_reads_the_appeal_id_from_the_path if {
 	authz.request == {
-		"user": {"id": "root"},
-		"action": "pick_candidate",
-		"resource": {"type": "appeal", "id": "appeal-7"},
-	} with input as inp
-		with data.corax.config as admin_config
+		"user": {"id": "alice"},
+		"action": "corax.appeal.confirm",
+		"resource": {"type": "appeal", "id": "appeal-0001"},
+	} with input as envoy_input("POST", "/corax/appeals/appeal-0001/confirm", alice_token)
+		with data.corax.config as fixture_config
 }
 
-test_non_admin_cannot_call_admin_routes if {
-	inp := as_user("alice", "POST", "/appeals")
+test_admin_action_never_calls_ai if {
+	not authz.risk_response with input as envoy_input("POST", "/corax/appeals", alice_token)
+		with data.corax.config as fixture_config
+		with http.send as risk_high
+}
+
+test_non_admin_is_denied_even_if_other_rules_allow if {
+	inp := envoy_input("POST", "/corax/appeals", bob_token)
 	not authz.allow with input as inp
-		with data.corax.config as admin_config
-	authz.reason == "admin only" with input as inp
-		with data.corax.config as admin_config
-}
-
-# Application rules, generated rules and exceptions never open an admin route.
-test_application_rules_cannot_open_admin_routes if {
-	not authz.allow with input as as_user("alice", "POST", "/appeals/appeal-7/pick")
-		with data.corax.config as admin_config
+		with data.corax.config as fixture_config
 		with data.app.authz.allow as true
 		with data.app.generated.allow as true
 		with data.app.exceptions.allow as true
 		with http.send as risk_low
+	authz.reason == "admin only" with input as inp
+		with data.corax.config as fixture_config
+		with data.app.authz.allow as true
 }
 
-test_no_admins_configured_denies_admin_routes if {
-	not authz.allow with input as as_user("root", "POST", "/appeals")
-		with data.corax.config as object.remove(admin_config, ["admins"])
+test_no_admin_configured_means_nobody_is_admin if {
+	not authz.allow with input as envoy_input("POST", "/corax/appeals", alice_token)
+		with data.corax.config as object.remove(fixture_config, ["admin"])
 }
 
-test_admin_still_needs_valid_token if {
-	inp := envoy_input("POST", "/appeals", concat(" ", ["Bearer", sign(object.union(valid_claims, {"sub": "root"}), "other-secret")]))
-	not authz.allow with input as inp
-		with data.corax.config as admin_config
+test_admin_route_with_wrong_method_is_denied if {
+	authz.reason == "no matching route" with input as envoy_input("DELETE", "/corax/appeals/appeal-0001", alice_token)
+		with data.corax.config as fixture_config
+}
+
+test_allowed_request_passes_the_user_to_the_upstream if {
+	authz.result.headers == {"x-corax-user": "alice"} with input as envoy_input("GET", "/corax/appeals/appeal-0001", alice_token)
+		with data.corax.config as fixture_config
+	authz.result.headers == {} with input as envoy_input("GET", "/corax/appeals/appeal-0001", bob_token)
+		with data.corax.config as fixture_config
 }
