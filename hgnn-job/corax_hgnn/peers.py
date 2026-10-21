@@ -1,13 +1,3 @@
-"""Peer groups: users who share an attribute node (department, title, manager, program, ...).
-
-Used for two things:
-
-- hard negatives: an object that one of the user's peers has, but the user does not.
-  They look plausible from the outside (training option and evaluation).
-- peer coverage: the share of a user's peers that have an object, e.g. "2 of 140 colleagues".
-  A deterministic, explainable signal that complements the HGNN score.
-"""
-
 import random
 from collections import defaultdict
 
@@ -19,11 +9,8 @@ from corax_hgnn.graph import Graph
 
 class PeerIndex:
     def __init__(self, graph: Graph, target_edges: Tensor):
-        """Build the index from the graph's group edges and the given (user, object) edges.
-
-        Only `target_edges` count as "owned", so callers decide what is visible
-        (e.g. only training edges while training).
-        """
+        # Build the index from the graph's group edges and the given (user, object) edges.
+        # Only `target_edges` count as "owned", so callers decide what is visible
         data, target = graph.data, graph.target
 
         # user -> groups, group -> users. A group is (edge type, attribute node index).
@@ -53,7 +40,7 @@ class PeerIndex:
     def hard_negatives(
         self, users: list[int], per_user: int, rng: random.Random, max_tries: int = 20
     ) -> Tensor:
-        """For each user, `per_user` objects owned by a random peer but not by the user."""
+        # For each user, `per_user` objects owned by a random peer but not by the user
         sources, destinations = [], []
         for user in users:
             groups = self.groups_of.get(user)
@@ -72,8 +59,7 @@ class PeerIndex:
         return torch.tensor([sources, destinations], dtype=torch.long).reshape(2, -1)
 
     def coverage(self, pairs: Tensor) -> Tensor:
-        """For each (user, object): the highest share of peers in any of the user's groups who
-        own the object. The user is never counted as their own peer."""
+        # For each (user, object): the highest share of peers in any of the user's groups who own the object. The user is never counted as their own peer
         values = []
         for user, obj in pairs.t().tolist():
             self_owns = 1 if (user, obj) in self.known else 0

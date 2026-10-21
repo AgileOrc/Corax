@@ -1,0 +1,33 @@
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from tier import TierLimits
+
+
+@dataclass(frozen=True)
+class Settings:
+    model_dir: Path
+    risk_threshold: float | None = None
+    opa_path: str = "opa"
+    policy_dir: Path | None = None
+    generated_dir: Path = Path("policies/generated")
+    tier_limits: TierLimits = field(default_factory=TierLimits)
+
+    @classmethod
+    def from_env(cls) -> "Settings":
+        env = os.environ.get
+        threshold, policy_dir = env("AI_RISK_THRESHOLD"), env("POLICY_DIR")
+        defaults = TierLimits()
+        return cls(
+            model_dir=Path(env("CORAX_MODEL_DIR", "output/hgnn")),
+            risk_threshold=float(threshold) if threshold else None,
+            opa_path=env("OPA_PATH", "opa"),
+            policy_dir=Path(policy_dir) if policy_dir else None,
+            generated_dir=Path(env("GENERATED_DIR", "policies/generated")),
+            tier_limits=TierLimits(
+                max_users=int(env("AUTO_APPLY_MAX_USERS", defaults.max_users)),
+                max_pairs=int(env("AUTO_APPLY_MAX_PAIRS", defaults.max_pairs)),
+                max_mean_risk=float(env("AUTO_APPLY_MAX_MEAN_RISK", defaults.max_mean_risk)),
+            ),
+        )

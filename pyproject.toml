@@ -9,12 +9,16 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
+# No line length limit; ruff is used for bug checks only, not to reformat code.
+# E402: scripts set a warnings filter or sys.path before their imports on purpose.
+ignore = ["E501", "E402"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["hgnn-job", "scripts"]
+pythonpath = ["hgnn-job", "scripts", "ai-corax"]
 # Noise from third-party libraries on Python 3.13, not from Corax code.
 filterwarnings = [
     "ignore::DeprecationWarning:torch_geometric.*",
     "ignore:`torch.jit.script` is deprecated:FutureWarning",
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated",
 ]

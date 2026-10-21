@@ -1,7 +1,3 @@
-"""Load a typed graph from nodes.csv and edges.csv into a PyTorch Geometric HeteroData object.
-The file format is described in docs/data-format.md.
-"""
-
 import csv
 from collections import defaultdict
 from dataclasses import dataclass
@@ -39,7 +35,7 @@ def load_graph(folder: str | Path, target_relation: str) -> Graph:
 
     # 1. Nodes: give every node an index inside its own type.
     node_ids: dict[str, list[str]] = defaultdict(list)
-    index: dict[str, tuple[str, int]] = {}  # node id -> (type, index within type)
+    index: dict[str, tuple[str, int]] = {} # node id -> (type, index within type)
     for line, row in enumerate(read_rows(folder / "nodes.csv", ["id", "type"]), start=2):
         node_id, node_type = row["id"], row["type"]
         if node_id in index:
@@ -72,8 +68,7 @@ def load_graph(folder: str | Path, target_relation: str) -> Graph:
     if unused:
         raise ValueError(f"node type(s) without any edge: {unused}")
 
-    # 4. Build HeteroData. ToUndirected adds a reverse edge type for every edge type,
-    #    so messages flow both ways (as in the paper).
+    # 4. Build HeteroData (object). ToUndirected adds a reverse edge type for every edge type, so messages flow both ways
     data = HeteroData()
     for node_type, ids in node_ids.items():
         data[node_type].num_nodes = len(ids)

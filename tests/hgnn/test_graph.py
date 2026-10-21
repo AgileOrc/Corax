@@ -12,7 +12,6 @@ def test_loads_node_types_and_counts():
     assert set(graph.node_ids) == {"lecturer", "student", "program", "position", "course"}
     assert graph.data["lecturer"].num_nodes == 5
     assert graph.data["student"].num_nodes == 6
-    # node ids keep file order, so row i of an embedding matrix is node_ids[type][i]
     assert graph.node_ids["lecturer"][0] == "lecturer_budi"
 
 

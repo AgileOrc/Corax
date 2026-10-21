@@ -3,7 +3,6 @@ import csv
 from convert_amazon import TARGET_RELATION, convert
 from corax_hgnn.graph import load_graph
 
-# A tiny file in the same shape as amzn-anon-access-samples-2.0.csv
 SAMPLE = """\
 HOST_1,PERMGROUP_7,PERSON_BUSINESS_TITLE,PERSON_DEPTNAME,PERSON_ID,PERSON_MGR_ID,SYSTEM_SUPPORT_3
 1,0,10,5,100,9,1
@@ -34,7 +33,7 @@ def test_counts_nodes_and_edges(tmp_path):
         "title": 2,
         "manager": 2,
     }
-    assert counts["edges"][TARGET_RELATION] == 5  # number of cells equal to 1
+    assert counts["edges"][TARGET_RELATION] == 5
     assert counts["edges"]["belongs_to"] == 3
 
 

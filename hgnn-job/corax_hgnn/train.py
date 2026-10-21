@@ -1,15 +1,3 @@
-"""Self-supervised link prediction training, following Yin et al. 2024.
-
-1. Split the target edges (e.g. "accessed") into training and validation edges (0.9 / 0.1).
-2. Each epoch: encode the graph, score positive edges and random negative pairs (2 per positive),
-   and minimise binary cross-entropy.
-3. After each epoch, compute the validation loss. Stop when it has not improved for `patience`
-   epochs, and keep the weights from the best epoch.
-
-The paper trains in mini-batches; we train full-batch because the graphs are small
-(see docs/ai-design.md, section 3.2).
-"""
-
 import copy
 import logging
 import random
@@ -38,12 +26,14 @@ class TrainConfig:
     max_epochs: int = 1000
     patience: int = 10
     val_ratio: float = 0.1
-    # Held-out edges for the final report (scripts/evaluate_hgnn.py). 0 = no test split.
-    test_ratio: float = 0.0
+    # Held-out edges for scripts/evaluate_hgnn.py, never used in training: 80 / 10 / 10 split.
+    # 0 = no test split (all but the validation edges are used for training).
+    test_ratio: float = 0.1
     negative_ratio: float = 2.0
     # Share of training negatives taken from peers' objects instead of random pairs.
-    # 0 = paper (random only). Experiment E2.
     hard_negative_ratio: float = 0.0
+    # Share of real access (validation positives) that must pass the AI check.
+    target_pass_rate: float = 0.99
     seed: int = 0
 
 
@@ -57,14 +47,12 @@ class TrainResult:
     history: list[tuple[int, float, float]] = field(default_factory=list)
     # held-out test edges (only when TrainConfig.test_ratio > 0); never used during training
     test_data: HeteroData | None = None
+    # validation pairs scored by the best model, used to calibrate the risk threshold
+    val_labels: Tensor | None = None
+    val_probs: Tensor | None = None
 
 
 def split_edges(graph: Graph, config: TrainConfig) -> tuple[HeteroData, HeteroData, HeteroData]:
-    """Split the target edges into training, validation and test sets.
-
-    Part of the training edges are only used as labels, not for message passing,
-    so the model cannot simply "see" the edge it has to predict.
-    """
     transform = T.RandomLinkSplit(
         num_val=config.val_ratio,
         num_test=config.test_ratio,
@@ -85,11 +73,7 @@ def sample_training_pairs(
     hard_negative_ratio: float = 0.0,
     rng: random.Random | None = None,
 ) -> tuple[Tensor, Tensor]:
-    """Positive training edges plus fresh negative pairs, with their 0/1 labels.
-
-    Negatives are random pairs; with `hard_negative_ratio` > 0, that share of them is taken
-    from peers' objects instead (hard negatives).
-    """
+    
     positives = data[target].edge_label_index
     num_negatives = int(positives.size(1) * negative_ratio)
 
@@ -143,23 +127,28 @@ def train(graph: Graph, config: TrainConfig | None = None) -> TrainResult:
     np.random.seed(config.seed)
     torch.manual_seed(config.seed)
 
+    # splitting dataset into: 90% training + 10% validation 
     train_data, val_data, test_data = split_edges(graph, config)
     target = graph.target
     val_pairs = val_data[target].edge_label_index
     val_labels = val_data[target].edge_label.float()
 
+    # preparing hard negatives
     # Hard negatives may only use what training can see: the training edges.
     peer_index, rng = None, random.Random(config.seed)
     if config.hard_negative_ratio > 0:
         visible = torch.cat([train_data[target].edge_index, train_data[target].edge_label_index], 1)
         peer_index = PeerIndex(graph, visible)
 
+    # building model (the HGNN with random weights) and optimizer (revising the weights value until the model could guessing right)
     model = HGNN(graph.data, hidden=config.hidden, num_layers=config.num_layers)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
 
+    # take records which model that the best
     best_state, best_epoch, best_val_loss = None, 0, float("inf")
-    history = []
+    history = [] # epoche progresses
 
+    # training model per epoch
     for epoch in range(1, config.max_epochs + 1):
         # Training step
         model.train()
@@ -167,7 +156,7 @@ def train(graph: Graph, config: TrainConfig | None = None) -> TrainResult:
         pairs, labels = sample_training_pairs(
             train_data, target, config.negative_ratio,
             peer_index, config.hard_negative_ratio, rng,
-        )  # fmt: skip
+        ) 
         train_loss, _ = loss_and_scores(model, train_data, target, pairs, labels)
         train_loss.backward()
         optimizer.step()
@@ -178,6 +167,7 @@ def train(graph: Graph, config: TrainConfig | None = None) -> TrainResult:
             val_loss, _ = loss_and_scores(model, val_data, target, val_pairs, val_labels)
         history.append((epoch, train_loss.item(), val_loss.item()))
 
+        # early stopping to avoid overfitting and avoid time wasting
         if val_loss.item() < best_val_loss:
             best_state = copy.deepcopy(model.state_dict())
             best_epoch, best_val_loss = epoch, val_loss.item()
@@ -185,9 +175,11 @@ def train(graph: Graph, config: TrainConfig | None = None) -> TrainResult:
             log.info("early stop at epoch %d (best epoch %d)", epoch, best_epoch)
             break
 
+        # print log
         if epoch % 10 == 0:
             log.info("epoch %d  train %.4f  val %.4f", epoch, train_loss.item(), val_loss.item())
 
+    # get the best epoch
     model.load_state_dict(best_state)
     model.eval()
     with torch.no_grad():
@@ -200,4 +192,6 @@ def train(graph: Graph, config: TrainConfig | None = None) -> TrainResult:
         val_auc=roc_auc(val_labels, val_scores),
         history=history,
         test_data=test_data if config.test_ratio > 0 else None,
+        val_labels=val_labels,
+        val_probs=torch.sigmoid(val_scores),
     )
