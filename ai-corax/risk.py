@@ -1,13 +1,3 @@
-"""Risk score from the exported HGNN embeddings.
-
-    score = h_user · h_object
-    p     = σ(score)        how likely this user is to be connected to this object
-    risk  = 1 − p
-
-This is the HGNN's own dot-product decoder, so no extra model is needed (docs/ai-design.md, section 4).
-Only numpy is used: the service does not need torch.
-"""  # noqa: E501
-
 import json
 import math
 from dataclasses import dataclass
@@ -18,7 +8,7 @@ import numpy as np
 
 @dataclass(frozen=True)
 class RiskResult:
-    risk: float | None  # None when the user or object has no embedding
+    risk: float | None
     high_risk: bool
     reason: str | None = None
 
@@ -38,7 +28,6 @@ class RiskModel:
 
     @classmethod
     def load(cls, model_dir: str | Path, threshold: float | None = None) -> "RiskModel":
-        """Load the hgnn-job output. `threshold` overrides the calibrated one in metadata.json."""
         model_dir = Path(model_dir)
         metadata = json.loads((model_dir / "metadata.json").read_text(encoding="utf-8"))
         node_ids = json.loads((model_dir / "node_ids.json").read_text(encoding="utf-8"))
@@ -69,7 +58,6 @@ class RiskModel:
 
 
 def _sigmoid(x: float) -> float:
-    # Written in two branches so exp() never overflows for large |x|.
     if x >= 0:
         return 1 / (1 + math.exp(-x))
     e = math.exp(x)

@@ -1,9 +1,3 @@
-# POST /risk    called by OPA (http.send) only after the policy allowed a request
-# GET  /health  model info, for checks and the demo
-
-# Run: CORAX_MODEL_DIR=output/exp-hard50 uvicorn main:app --app-dir ai-corax --port 8000
-
-
 import logging
 from contextlib import asynccontextmanager
 
@@ -14,18 +8,15 @@ from risk import RiskModel
 
 log = logging.getLogger("ai_corax")
 
-
 class RiskRequest(BaseModel):
     user: str = Field(min_length=1, max_length=256)
     object: str = Field(min_length=1, max_length=256)
 
-
 class RiskResponse(BaseModel):
-    risk: float | None  # None when the user or object is unknown; the policy decision stands
+    risk: float | None
     high_risk: bool
     threshold: float
     reason: str | None = None
-
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
@@ -78,7 +69,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
 
     return app
-
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 app = create_app()
