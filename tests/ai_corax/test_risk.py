@@ -32,7 +32,7 @@ def test_unknown_pair_scores_high_risk(model_dir):
     [
         ("nobody", "r1", "unknown user"),
         ("u1", "nothing", "unknown object"),
-        ("u1", "d1", "unknown object"),  # a department is not an object of the target relation
+        ("u1", "d1", "unknown object"),
     ],
 )
 def test_missing_embedding_gives_no_score_and_never_denies(model_dir, user, obj, reason):
@@ -47,7 +47,7 @@ def test_threshold_override_wins_over_metadata(model_dir):
     model = RiskModel.load(model_dir, threshold=0.99)
 
     assert model.threshold == 0.99
-    assert model.risk("u1", "r2").high_risk is False  # risk ≈ 0.982 is below 0.99
+    assert model.risk("u1", "r2").high_risk is False
 
 
 def test_old_export_without_threshold_is_rejected(model_dir):

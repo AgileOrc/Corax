@@ -24,19 +24,16 @@ def _ids(graph, node_type, *names):
 
 
 def test_peer_coverage_counts_colleagues_not_the_user(graph):
-    # program IF lecturers: budi, rina, andi. Of budi's two IF peers, only rina accessed fajar.
     budi, andi = _ids(graph, "lecturer", "lecturer_budi", "lecturer_andi")
     (fajar,) = _ids(graph, "student", "student_fajar")
 
     coverage = _index(graph).coverage(torch.tensor([[budi, andi], [fajar, fajar]]))
 
-    # best group for budi is program IF: 1 of 2 peers (rina) has fajar
     assert coverage[0] == pytest.approx(1 / 2)
     assert coverage[1] == pytest.approx(1 / 2)
 
 
 def test_peer_coverage_is_zero_when_no_peer_has_the_object(graph):
-    # sari's peers are tono (same program SI) and budi (same position); only rina accessed fajar
     (sari,) = _ids(graph, "lecturer", "lecturer_sari")
     (fajar,) = _ids(graph, "student", "student_fajar")
 
@@ -68,7 +65,7 @@ def test_training_pairs_include_hard_negatives(graph):
     )
 
     positives = int(labels.sum())
-    assert int((labels == 0).sum()) == 2 * positives  # total stays at negative ratio 2
+    assert int((labels == 0).sum()) == 2 * positives
 
 
 def test_training_runs_with_one_layer_and_hard_negatives(graph):

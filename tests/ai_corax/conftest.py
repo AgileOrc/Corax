@@ -1,9 +1,21 @@
 import json
+import os
+import shutil
+from pathlib import Path
 
 import numpy as np
 import pytest
 
 THRESHOLD = 0.5
+ROOT = Path(__file__).parents[2]
+
+
+@pytest.fixture
+def opa():
+    for found in (os.environ.get("OPA_PATH"), shutil.which("opa"), ROOT.parent / "opa.exe"):
+        if found and Path(found).exists():
+            return str(found)
+    pytest.skip("opa not found (set OPA_PATH)")
 
 
 @pytest.fixture
@@ -13,11 +25,6 @@ def threshold():
 
 @pytest.fixture
 def model_dir(tmp_path):
-    """A tiny hand-made hgnn-job output, so the scores are easy to check.
-
-    u1 · r1 = 2·2 = 4   -> p = σ(4)  ≈ 0.982 -> risk ≈ 0.018 (normal)
-    u1 · r2 = 2·-2 = -4 -> p = σ(-4) ≈ 0.018 -> risk ≈ 0.982 (high)
-    """
     np.savez(
         tmp_path / "embeddings.npz",
         user=np.array([[2.0, 0.0], [0.0, 1.0]], dtype=np.float32),

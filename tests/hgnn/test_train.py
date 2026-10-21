@@ -7,16 +7,12 @@ from corax_hgnn.train import TrainConfig, roc_auc, split_edges, train
 
 TOY = Path(__file__).parent / "fixtures" / "toy_graph"
 
-# A higher learning rate and a smaller model keep the toy-graph tests fast.
 FAST = TrainConfig(hidden=16, learning_rate=0.01, max_epochs=200, patience=10, seed=0)
 
 
 @pytest.fixture
 def graph():
     return load_graph(TOY, "accessed")
-
-
-# --- roc_auc --------------------------------------------------------------
 
 
 def test_auc_perfect_separation_is_1():
@@ -34,9 +30,6 @@ def test_auc_all_ties_is_half():
     assert roc_auc(labels, torch.tensor([0.5, 0.5, 0.5, 0.5])) == 0.5
 
 
-# --- split ------------------------------------------------------------------
-
-
 def test_split_holds_out_validation_edges_with_negatives(graph):
     torch.manual_seed(0)
     _, val_data, _ = split_edges(graph, FAST)
@@ -44,8 +37,8 @@ def test_split_holds_out_validation_edges_with_negatives(graph):
 
     positives = int(labels.sum())
     negatives = int((labels == 0).sum())
-    assert positives == 1  # 10% of the 10 "accessed" edges
-    assert negatives == 2 * positives  # negative ratio 2, as in the paper
+    assert positives == 1
+    assert negatives == 2 * positives
 
 
 def test_validation_edges_are_hidden_from_training_messages(graph):
@@ -58,9 +51,6 @@ def test_validation_edges_are_hidden_from_training_messages(graph):
     val_positives = val_data[target].edge_label_index[:, val_labels == 1]
     for edge in val_positives.t().tolist():
         assert tuple(edge) not in message_edges
-
-
-# --- training ---------------------------------------------------------------
 
 
 def test_training_reduces_the_loss(graph):
@@ -77,7 +67,6 @@ def test_early_stopping_keeps_the_best_epoch(graph):
     val_losses = [val_loss for _, _, val_loss in result.history]
     assert result.best_val_loss == min(val_losses)
     assert result.history[result.best_epoch - 1][2] == result.best_val_loss
-    # training stopped at most `patience` epochs after the best one
     assert len(result.history) <= result.best_epoch + FAST.patience
 
 

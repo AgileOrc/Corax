@@ -29,7 +29,7 @@ def test_link_logits_is_the_dot_product(graph):
     model = HGNN(graph.data, hidden=16)
     h = model.encode(graph.data)
     src, _, dst = graph.target
-    pairs = torch.tensor([[0, 1], [2, 3]])  # (lecturer 0, student 2) and (lecturer 1, student 3)
+    pairs = torch.tensor([[0, 1], [2, 3]])
 
     logits = link_logits(h[src], h[dst], pairs)
 
@@ -57,7 +57,6 @@ def test_gradients_reach_every_node_type(graph):
     logits = link_logits(h[src], h[dst], graph.data[graph.target].edge_index)
     logits.sum().backward()
 
-    # Messages flow through all edge types, so every node type's embedding gets updated.
     for node_type in graph.data.node_types:
         assert model.node_embeddings[node_type].weight.grad is not None
 

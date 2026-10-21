@@ -4,7 +4,8 @@ import sys
 from pathlib import Path
 
 import pytest
-from corax_hgnn.export import load, save
+import torch
+from corax_hgnn.export import load, load_trained, save, save_graph
 from corax_hgnn.graph import load_graph
 from corax_hgnn.train import TrainConfig, train
 
@@ -24,7 +25,7 @@ def exported(tmp_path):
 def test_writes_all_output_files(exported):
     _, _, out = exported
 
-    for name in ["embeddings.npz", "node_ids.json", "metadata.json", "history.csv"]:
+    for name in ["embeddings.npz", "node_ids.json", "metadata.json", "history.csv", "model.pt", "split.pt"]:
         assert (out / name).exists()
 
 
@@ -69,6 +70,67 @@ def test_history_has_one_row_per_epoch(exported):
     assert len(rows) - 1 == len(result.history)
 
 
+def test_trained_model_can_be_loaded_again(tmp_path):
+    graph = load_graph(TOY, "accessed")
+    result = train(graph, FAST)
+    save(result, graph, FAST, tmp_path, data_folder=TOY)
+
+    model, loaded_graph, split, metadata = load_trained(tmp_path)
+
+    assert metadata["data"] == str(TOY)
+    assert loaded_graph.node_ids == graph.node_ids
+    for name, weights in result.model.state_dict().items():
+        assert torch.equal(model.state_dict()[name], weights)
+    assert torch.equal(split["test_data"][graph.target].edge_label_index,
+                       result.test_data[graph.target].edge_label_index)
+    assert torch.equal(split["val_probs"], result.val_probs)
+
+
+def test_loading_needs_the_data_folder(exported):
+    _, _, out = exported
+
+    with pytest.raises(ValueError, match="no data folder"):
+        load_trained(out)
+    model, _, _, _ = load_trained(out, data_folder=TOY)
+    assert model is not None
+
+
+def test_graph_json_has_structure_but_no_access_history(tmp_path):
+    path = save_graph(TOY, "accessed", tmp_path)
+
+    graph = json.loads(path.read_text(encoding="utf-8"))
+
+    assert graph["lecturer_budi"] == {
+        "advises": ["student_ani"],
+        "holds": ["position_head_of_program"],
+        "member_of": ["program_IF"],
+        "teaches": ["course_IF201"],
+    }
+    assert graph["student_candra"] == {
+        "enrolled_in": ["course_IF201", "course_IF202"],
+        "member_of": ["program_IF"],
+    }
+    assert all("accessed" not in relations for relations in graph.values())
+
+
+def test_access_json_holds_only_the_target_relation(tmp_path):
+    save_graph(TOY, "accessed", tmp_path)
+
+    access = json.loads((tmp_path / "access.json").read_text(encoding="utf-8"))
+
+    assert access["lecturer_budi"] == ["student_ani", "student_candra"]
+    assert access["lecturer_tono"] == ["student_dewi", "student_eko", "student_gita"]
+    assert sum(len(objects) for objects in access.values()) == 10
+
+
+def test_graph_json_is_stable(tmp_path):
+    first = save_graph(TOY, "accessed", tmp_path / "a").read_text(encoding="utf-8")
+    second = save_graph(TOY, "accessed", tmp_path / "b").read_text(encoding="utf-8")
+
+    assert first == second
+    assert list(json.loads(first)) == sorted(json.loads(first))
+
+
 def test_command_line_runs_end_to_end(tmp_path):
     completed = subprocess.run(
         [
@@ -83,9 +145,10 @@ def test_command_line_runs_end_to_end(tmp_path):
         capture_output=True,
         text=True,
         check=False,
-    )  # fmt: skip
+    )
 
     assert completed.returncode == 0, completed.stderr
     assert "val AUC" in completed.stdout
     assert "risk threshold" in completed.stdout
     assert (tmp_path / "embeddings.npz").exists()
+    assert (tmp_path / "graph.json").exists()
