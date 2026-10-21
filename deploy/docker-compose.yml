@@ -1,0 +1,86 @@
+# Corax in front of the demo application (a document store). Before the first start, prepare the
+# enterprise graph and the HGNN (output/gateway): python scripts/demo_gateway.py prepare
+# Ports: gateway 8080 and console 8090, or CORAX_GATEWAY_PORT / CORAX_CONSOLE_PORT.
+#
+#   client -> envoy:8080 -> opa (policy/corax + demo-app/policy + config + graph, AI check)
+#                        -> app (/documents/...) or ai-corax (/appeals...)
+#
+# ai-corax writes exceptions and generated rules into the "runtime" volume; OPA loads it with
+# --watch, so an approved appeal becomes policy without a restart.
+name: corax
+
+services:
+  ai-corax:
+    build:
+      context: ..
+      dockerfile: deploy/ai-corax.Dockerfile
+    environment:
+      CORAX_MODEL_DIR: /model
+      OPA_PATH: /usr/local/bin/opa
+      POLICY_DIR: /policy/app
+      GENERATED_DIR: /runtime/generated
+      STATE_DIR: /state
+    volumes:
+      - ../output/gateway/hgnn:/model:ro
+      - ./demo-app/policy:/policy/app:ro
+      - runtime:/runtime
+      - state:/state
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 2s
+      retries: 30
+
+  opa:
+    image: openpolicyagent/opa:1.21.2-envoy
+    command:
+      - run
+      - --server
+      - --addr=:8181
+      - --watch
+      - --ignore=*_test.rego
+      - --ignore=.*
+      - --config-file=/config/opa.yaml
+      - /policy/corax
+      - /policy/app
+      - /policy/data
+      - /runtime/generated
+    volumes:
+      - ../policy/corax:/policy/corax:ro
+      - ./demo-app/policy:/policy/app:ro
+      # data.corax.config, and data.corax.graph from the folder the file sits in
+      - ./corax-config.json:/policy/data/corax-config.json:ro
+      - ../output/gateway/hgnn/graph.json:/policy/data/corax/graph/data.json:ro
+      - ./opa.yaml:/config/opa.yaml:ro
+      - runtime:/runtime:ro
+    depends_on:
+      ai-corax:
+        condition: service_healthy
+
+  app:
+    build: demo-app
+
+  envoy:
+    image: envoyproxy/envoy:v1.38.7
+    command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "warn"]
+    volumes:
+      - ./envoy.yaml:/etc/envoy/envoy.yaml:ro
+    ports:
+      - "${CORAX_GATEWAY_PORT:-8080}:8080"
+    depends_on: [opa, app]
+
+  # Demo web page (http://localhost:8090): pick who you are, send requests through the gateway,
+  # handle appeals as the admin. It plays the identity provider of the demo (signs the tokens).
+  console:
+    build: console
+    volumes:
+      - ./corax-config.json:/config/corax-config.json:ro
+      - ../output/gateway/data/demo.json:/config/demo.json:ro
+      - runtime:/runtime:ro
+      - state:/state:ro
+    ports:
+      - "${CORAX_CONSOLE_PORT:-8090}:8000"
+    depends_on: [envoy]
+
+volumes:
+  runtime:
+  state:

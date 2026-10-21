@@ -92,12 +92,16 @@ The full AI design, including how it maps to the papers below, is in [docs/ai-de
 ## Quick start
 
 ```bash
-git clone https://github.com/<you>/Corax.git
+git clone https://github.com/AgileOrc/Corax.git
 cd Corax
-docker compose up --build
+pip install -r hgnn-job/requirements.txt -r ai-corax/requirements.txt
+python scripts/demo_gateway.py prepare                      # enterprise graph and HGNN -> output/gateway
+docker compose -f deploy/docker-compose.yml up -d --build   # Envoy :8080, web console :8090
+python scripts/demo_gateway.py run                          # requests and appeals through the gateway
 ```
 
-The demo API is exposed through the sidecar at `http://localhost:8080`.
+The demo document store is exposed through Envoy at `http://localhost:8080`; the console at `http://localhost:8090`
+lets you send requests as any employee and handle appeals as the admin. See [deploy/README.md](deploy/README.md).
 
 <!-- TODO: fill in once the demo scripts exist -->
 ```bash

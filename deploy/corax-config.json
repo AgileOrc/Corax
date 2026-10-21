@@ -1,0 +1,24 @@
+{
+  "corax": {
+    "config": {
+      "jwt": {
+        "secret": "corax-demo-secret-not-for-production",
+        "iss": "corax-demo",
+        "aud": "corax-demo-api"
+      },
+      "routes": [
+        {"method": "GET", "path": "/documents/:id", "action": "read", "resource_type": "document"},
+        {"method": "POST", "path": "/appeals", "action": "submit_appeal", "resource_type": "appeal"},
+        {"method": "GET", "path": "/appeals/:id", "action": "read_appeal", "resource_type": "appeal"},
+        {"method": "POST", "path": "/appeals/:id/pick", "action": "pick_candidate", "resource_type": "appeal"},
+        {"method": "POST", "path": "/appeals/:id/confirm", "action": "confirm_appeal", "resource_type": "appeal"},
+        {"method": "POST", "path": "/appeals/:id/reject", "action": "reject_appeal", "resource_type": "appeal"}
+      ],
+      "ai": {
+        "url": "http://ai-corax:8000",
+        "timeout": "200ms"
+      },
+      "admins": ["admin_01"]
+    }
+  }
+}

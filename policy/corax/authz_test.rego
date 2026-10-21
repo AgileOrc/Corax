@@ -294,3 +294,66 @@ test_exception_still_needs_valid_token if {
 		with data.corax.config as fixture_config
 		with data.app.exceptions.allow as true
 }
+
+# --- Admin API (ai-corax /appeals) ------------------------------------------------------
+
+admin_config := object.union(fixture_config, {
+	"routes": array.concat(fixture_config.routes, [
+		{"method": "POST", "path": "/appeals", "action": "submit_appeal", "resource_type": "appeal"},
+		{"method": "POST", "path": "/appeals/:id/pick", "action": "pick_candidate", "resource_type": "appeal"},
+	]),
+	"admins": ["root"],
+})
+
+as_user(sub, method, path) := envoy_input(method, path, concat(" ", ["Bearer", sign(object.union(valid_claims, {"sub": sub}), secret)]))
+
+test_admin_submits_appeal_without_ai_check if {
+	inp := as_user("root", "POST", "/appeals")
+	authz.result == {"allowed": true, "dynamic_metadata": {"corax_reason": "allowed admin request"}} with input as inp
+		with data.corax.config as admin_config
+		with http.send as risk_high
+	not authz.risk_response with input as inp
+		with data.corax.config as admin_config
+		with http.send as risk_high
+}
+
+test_admin_route_takes_appeal_id_from_path if {
+	inp := as_user("root", "POST", "/appeals/appeal-7/pick")
+	authz.allow with input as inp
+		with data.corax.config as admin_config
+	authz.request == {
+		"user": {"id": "root"},
+		"action": "pick_candidate",
+		"resource": {"type": "appeal", "id": "appeal-7"},
+	} with input as inp
+		with data.corax.config as admin_config
+}
+
+test_non_admin_cannot_call_admin_routes if {
+	inp := as_user("alice", "POST", "/appeals")
+	not authz.allow with input as inp
+		with data.corax.config as admin_config
+	authz.reason == "admin only" with input as inp
+		with data.corax.config as admin_config
+}
+
+# Application rules, generated rules and exceptions never open an admin route.
+test_application_rules_cannot_open_admin_routes if {
+	not authz.allow with input as as_user("alice", "POST", "/appeals/appeal-7/pick")
+		with data.corax.config as admin_config
+		with data.app.authz.allow as true
+		with data.app.generated.allow as true
+		with data.app.exceptions.allow as true
+		with http.send as risk_low
+}
+
+test_no_admins_configured_denies_admin_routes if {
+	not authz.allow with input as as_user("root", "POST", "/appeals")
+		with data.corax.config as object.remove(admin_config, ["admins"])
+}
+
+test_admin_still_needs_valid_token if {
+	inp := envoy_input("POST", "/appeals", concat(" ", ["Bearer", sign(object.union(valid_claims, {"sub": "root"}), "other-secret")]))
+	not authz.allow with input as inp
+		with data.corax.config as admin_config
+}

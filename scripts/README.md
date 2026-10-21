@@ -13,6 +13,8 @@ Helper scripts.
 | `make_amazon_scenarios.py` | Hides inferred role-based rules (title → resource) in the Amazon graph, for evaluating appeals |
 | `evaluate_appeals.py` | Scores kNN and candidate patterns on `scenarios.json` (precision@k, rank of the expected rule) |
 | `appeal_scenarios.py` | Reads and writes `scenarios.json` (used by the scripts above) |
+| `make_enterprise.py` | Writes a synthetic enterprise graph with two hidden policies, its `scenarios.json` and the demo requests (`demo.json`) |
+| `demo_gateway.py` | Both cases through the Docker gateway of `deploy/`: `prepare` the graph and the HGNN, then `run` requests and appeals via Envoy |
 
 ## Mini campus (appeals)
 
@@ -28,6 +30,22 @@ among the first few. To score it:
 ```bash
 python scripts/evaluate_appeals.py --model-dir output/mini-campus --scenarios output/mini-campus-data/scenarios.json
 ```
+
+## Enterprise (appeals)
+
+Employees, teams, departments, sites, regions, projects and documents; two hidden policies ("a manager reads every
+document of their department", "a security officer reads every document stored in their region") and a one-off appeal.
+
+```bash
+python scripts/make_enterprise.py output/enterprise-data
+python hgnn-job/run.py --data output/enterprise-data --target-relation accessed --out output/enterprise --learning-rate 0.01 --patience 50
+python scripts/evaluate_appeals.py --model-dir output/enterprise --scenarios output/enterprise-data/scenarios.json
+```
+
+With seed 0 (val AUC 0.966): the manager rule ranks 1st and opens exactly its 45 hidden pairs; the security officer
+rule ranks 2nd (1st is "user based_in region_emea AND user holds role_security_officer", the appellant alone). The
+first candidate of the one-off opens 141 pairs for 12 users, so its tier is large and it needs an admin. The same data
+runs the gateway demo ([deploy/README.md](../deploy/README.md)).
 
 ## Appeals on the Amazon data
 

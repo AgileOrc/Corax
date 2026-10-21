@@ -8,6 +8,9 @@
 # The AI risk check runs only after the policy allowed the request, so it can only turn an allow
 # into a deny. If ai-corax errors or times out, the policy decision stands.
 #
+# Admin routes (ai-corax /appeals, admin.rego) are decided by admin_allow alone: the rules above
+# never open them.
+#
 # Entry points:
 #   allow    boolean
 #   result   object for opa-envoy-plugin: allowed + dynamic_metadata (reason, risk) for Envoy logs
@@ -22,11 +25,20 @@ allow if {
 	not ai_high_risk
 }
 
-exception_allow if data.app.exceptions.allow with input as request
+exception_allow if {
+	not admin_route
+	data.app.exceptions.allow with input as request
+}
 
-policy_allow if data.app.authz.allow with input as request
+policy_allow if {
+	not admin_route
+	data.app.authz.allow with input as request
+}
 
-policy_allow if data.app.generated.allow with input as request
+policy_allow if {
+	not admin_route
+	data.app.generated.allow with input as request
+}
 
 # --- AI risk check ---------------------------------------------------------
 
@@ -62,6 +74,10 @@ reason := "missing or invalid token" if {
 	not user_id
 } else := "no matching route" if {
 	not route
+} else := "allowed admin request" if {
+	admin_allow
+} else := "admin only" if {
+	admin_route
 } else := "allowed by appeal exception" if {
 	exception_allow
 } else := "denied by policy" if {

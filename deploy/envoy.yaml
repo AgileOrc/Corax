@@ -1,0 +1,76 @@
+# Envoy, the policy enforcement point. Every request is checked by OPA (ext_authz, gRPC) before it
+# is routed: /documents/... to the application, /appeals... to AI-Corax. If OPA is unreachable or
+# fails, the request is denied (failure_mode_allow: false); a denied request gets 403.
+static_resources:
+  listeners:
+    - name: gateway
+      address:
+        socket_address: {address: 0.0.0.0, port_value: 8080}
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: gateway
+                access_log:
+                  - name: envoy.access_loggers.stdout
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                route_config:
+                  name: routes
+                  virtual_hosts:
+                    - name: corax
+                      domains: ["*"]
+                      routes:
+                        - match: {prefix: "/appeals"}
+                          route: {cluster: ai_corax}
+                        - match: {prefix: "/documents/"}
+                          route: {cluster: app}
+                http_filters:
+                  - name: envoy.filters.http.ext_authz
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
+                      transport_api_version: V3
+                      failure_mode_allow: false
+                      grpc_service:
+                        envoy_grpc: {cluster_name: opa}
+                        timeout: 1s
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+  clusters:
+    - name: opa
+      type: STRICT_DNS
+      connect_timeout: 1s
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options: {}
+      load_assignment:
+        cluster_name: opa
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: {address: opa, port_value: 9191}
+    - name: app
+      type: STRICT_DNS
+      connect_timeout: 1s
+      load_assignment:
+        cluster_name: app
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: {address: app, port_value: 8000}
+    - name: ai_corax
+      type: STRICT_DNS
+      connect_timeout: 1s
+      load_assignment:
+        cluster_name: ai_corax
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: {address: ai-corax, port_value: 8000}

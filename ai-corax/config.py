@@ -12,7 +12,12 @@ class Settings:
     opa_path: str = "opa"
     policy_dir: Path | None = None
     generated_dir: Path = Path("policies/generated")
+    # pending appeals and the audit log; OPA does not load this folder
+    state_dir: Path = Path("state")
     tier_limits: TierLimits = field(default_factory=TierLimits)
+    # allow "object has <value>" / "object is <id>" predicates in appeal patterns (Amazon: identity)
+    object_values: bool = False
+    object_identity: bool = False
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -25,9 +30,16 @@ class Settings:
             opa_path=env("OPA_PATH", "opa"),
             policy_dir=Path(policy_dir) if policy_dir else None,
             generated_dir=Path(env("GENERATED_DIR", "policies/generated")),
+            state_dir=Path(env("STATE_DIR", "state")),
+            object_values=_flag(env("APPEAL_OBJECT_VALUES")),
+            object_identity=_flag(env("APPEAL_OBJECT_IDENTITY")),
             tier_limits=TierLimits(
                 max_users=int(env("AUTO_APPLY_MAX_USERS", defaults.max_users)),
                 max_pairs=int(env("AUTO_APPLY_MAX_PAIRS", defaults.max_pairs)),
                 max_mean_risk=float(env("AUTO_APPLY_MAX_MEAN_RISK", defaults.max_mean_risk)),
             ),
         )
+
+
+def _flag(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes"}
