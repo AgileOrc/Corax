@@ -18,10 +18,15 @@ From the repository root:
 
 ```bash
 python hgnn-job/run.py --data tests/hgnn/fixtures/toy_graph --target-relation accessed --out output/toy
+python scripts/evaluate_hgnn.py --model-dir output/toy
 ```
 
-Options (defaults follow the paper): `--hidden 64`, `--learning-rate 0.001`, `--max-epochs 1000`,
-`--patience 10`, `--seed 0`. `--target-pass-rate 0.99` sets the exported risk threshold (not from the paper).
+Training runs once; `evaluate_hgnn.py` loads the saved model and scores it on the held-out test edges.
+
+Options (defaults follow the paper): `--hidden 64`, `--num-layers 2`, `--learning-rate 0.001`,
+`--max-epochs 1000`, `--patience 10`, `--seed 0`. Not from the paper: `--test-ratio 0.1` (80/10/10
+split; 0 = no test set), `--hard-negative-ratio 0` (0.5 worked best on Amazon), `--target-pass-rate 0.99`
+(sets the exported risk threshold).
 
 ## Output
 
@@ -31,3 +36,7 @@ Options (defaults follow the paper): `--hidden 64`, `--learning-rate 0.001`, `--
 | `node_ids.json` | Node type → list of node ids |
 | `metadata.json` | Settings, data size, best epoch, validation loss and AUC, calibrated `risk_threshold`, library versions |
 | `history.csv` | `epoch,train_loss,val_loss` for the learning curve |
+| `graph.json` | Node id → relation → destination ids, without the target relation. Read by ai-corax and loaded by OPA as `data.corax.graph` |
+| `access.json` | User id → object ids of the target relation (access history). Read by ai-corax only, to skip pairs that already have access |
+| `model.pt` | Trained weights, for `scripts/evaluate_hgnn.py` |
+| `split.pt` | Held-out test edges and validation scores, for `scripts/evaluate_hgnn.py` |

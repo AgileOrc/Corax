@@ -6,7 +6,7 @@ def main() -> None:
         module = importlib.import_module(name)
         print(f"{name:16} {getattr(module, '__version__', 'ok')}")
 
-    from torch_geometric.nn import SAGEConv, to_hetero  # noqa: F401  (import check only)
+    from torch_geometric.nn import SAGEConv, to_hetero
 
     print("SAGEConv and to_hetero OK")
 

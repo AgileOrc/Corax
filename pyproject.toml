@@ -9,6 +9,9 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
+# No line length limit; ruff is used for bug checks only, not to reformat code.
+# E402: scripts set a warnings filter or sys.path before their imports on purpose.
+ignore = ["E501", "E402"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
