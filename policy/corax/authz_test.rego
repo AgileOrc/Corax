@@ -258,3 +258,39 @@ expect_alice_bob(req) := {"status_code": 200, "body": {"risk": 0.1, "high_risk":
 	req.url == "http://ai-corax.test/risk"
 	req.body == {"user": "alice", "object": "bob"}
 }
+
+# --- Appeal exceptions ---------------------------------------------------------------
+
+test_exception_allows_when_policy_denies if {
+	authz.allow with input as read_grades
+		with data.corax.config as fixture_config
+		with data.app.authz.allow as false
+		with data.app.exceptions.allow as true
+		with http.send as risk_low
+}
+
+test_exception_skips_ai_check if {
+	authz.allow with input as read_grades
+		with data.corax.config as fixture_config
+		with data.app.authz.allow as true
+		with data.app.exceptions.allow as true
+		with http.send as risk_high
+	not authz.risk_response with input as read_grades
+		with data.corax.config as fixture_config
+		with data.app.authz.allow as true
+		with data.app.exceptions.allow as true
+		with http.send as risk_high
+}
+
+test_exception_reason if {
+	authz.result == {"allowed": true, "dynamic_metadata": {"corax_reason": "allowed by appeal exception"}} with input as read_grades
+		with data.corax.config as fixture_config
+		with data.app.exceptions.allow as true
+}
+
+test_exception_still_needs_valid_token if {
+	inp := envoy_input("GET", "/students/bob/grades/IF201", concat(" ", ["Bearer", sign(valid_claims, "other-secret")]))
+	not authz.allow with input as inp
+		with data.corax.config as fixture_config
+		with data.app.exceptions.allow as true
+}
