@@ -152,6 +152,8 @@ async function api(path, body) {
   return res.json();
 }
 
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
 function escapeHtml(text) {
   return String(text).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 }
@@ -255,8 +257,8 @@ function explainAppeal(answer) {
   if (a.status === "awaiting_choice") html += candidatesTable(a);
   const p = a.picked;
   if (p) {
-    html += `<p class="why">Picked #${p.number}: <code>${escapeHtml(p.pattern)}</code><br>Tier <b>${p.tier}</b> · ${p.users} users ·
-      ${p.pairs} new pairs` + (p.mean_risk != null ? ` · mean risk ${Number(p.mean_risk).toFixed(2)}` : "") + "</p>";
+    html += `<p class="why">Picked #${p.number}: <code>${escapeHtml(p.pattern)}</code><br>Tier <b>${p.tier}</b> · ${plural(p.users, "user")} ·
+      ${plural(p.pairs, "new pair")}` + (p.mean_risk != null ? ` · mean risk ${Number(p.mean_risk).toFixed(2)}` : "") + "</p>";
     if (p.reasons.length) html += `<p class="why muted">Needs confirmation: ${p.reasons.map(escapeHtml).join("; ")}</p>`;
     html += `<pre>${escapeHtml(p.rule)}</pre>`;
   }
@@ -302,7 +304,7 @@ function summary(e) {
   if (e.event === "approved") return `${e.user} → ${e.object} by ${e.by}`;
   if (e.event === "exception_applied" || e.event === "rule_applied") return e.file;
   if (e.event === "candidates") return `${e.found} found`;
-  if (e.event === "picked") return `#${e.number} ${e.pattern} (tier ${e.tier}, ${e.users} users, ${e.pairs} pairs) by ${e.by}`;
+  if (e.event === "picked") return `#${e.number} ${e.pattern} (tier ${e.tier}, ${plural(e.users, "user")}, ${plural(e.pairs, "pair")}) by ${e.by}`;
   if (e.event === "awaiting_confirmation") return (e.reasons || []).join("; ");
   if (e.event === "confirmed" || e.event === "rejected") return `by ${e.by}`;
   return "";

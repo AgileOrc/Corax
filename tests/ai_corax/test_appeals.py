@@ -186,6 +186,8 @@ def test_user_without_relations_gets_only_the_exception(appeal_model, tmp_path, 
         (lambda a: a.submit("appeal-1", "budi", "fajar", "read", "admin_1"), 409),
         (lambda a: a.submit("appeal-2", "nobody", "fajar", "read", "admin_1"), 404),
         (lambda a: a.submit("appeal-2", "budi", "nothing", "read", "admin_1"), 404),
+        # budi already reads ani: there is nothing to appeal
+        (lambda a: a.submit("appeal-2", "budi", "ani", "read", "admin_1"), 409),
         (lambda a: a.submit("../evil", "budi", "fajar", "read", "admin_1"), 400),
         (lambda a: a.pick("appeal-1", 999, "admin_1"), 400),
         (lambda a: a.pick("appeal-9", 1, "admin_1"), 404),

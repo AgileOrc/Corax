@@ -61,6 +61,8 @@ class Appeals:
                 raise AppealError(f"unknown user {user!r}", 404)
             if obj not in self.model.objects:
                 raise AppealError(f"unknown object {obj!r}", 404)
+            if self.graph.has_access(user, obj):
+                raise AppealError(f"{user!r} already has access to {obj!r}: nothing to appeal", 409)
             self.log("approved", appeal_id, user=user, object=obj, action=action, by=admin)
 
             # 1. the exact exception; similar cases are its negative examples
