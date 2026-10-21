@@ -1,10 +1,4 @@
-"""Train the HGNN with a held-out test split and report precision, recall, F1, AUC and thresholds.
-
-The test edges are never used for training or early stopping, so these numbers are honest.
-Embeddings are exported as well, and the metrics are added to metadata.json ("test_metrics").
-
-Example:
- """
+# Command: python scripts/evaluate_hgnn.py --model-dir output/hgnn
 
 import argparse
 import json
@@ -13,36 +7,20 @@ import sys
 import warnings
 from pathlib import Path
 
-# Third-party deprecation noise (torch / PyG on Python 3.13), not an error in Corax.
 warnings.filterwarnings("ignore", message="`torch.jit.script` is deprecated")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hgnn-job"))
 
-from corax_hgnn.evaluate import evaluate  # noqa: E402
-from corax_hgnn.export import save  # noqa: E402
-from corax_hgnn.graph import load_graph  # noqa: E402
-from corax_hgnn.train import TrainConfig, train  # noqa: E402
+from corax_hgnn.evaluate import evaluate
+from corax_hgnn.export import load_trained
 
 
 def parse_args() -> argparse.Namespace:
-    defaults = TrainConfig()
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--data", required=True, help="folder with nodes.csv and edges.csv")
-    parser.add_argument("--target-relation", required=True)
-    parser.add_argument("--out", default="output/hgnn-eval")
-    parser.add_argument("--test-ratio", type=float, default=0.1)
-    parser.add_argument("--hidden", type=int, default=defaults.hidden)
-    parser.add_argument("--num-layers", type=int, default=defaults.num_layers)
-    parser.add_argument("--hard-negative-ratio", type=float, default=defaults.hard_negative_ratio)
-    parser.add_argument(
-        "--target-pass-rate", type=float, default=defaults.target_pass_rate,
-        help="share of real access that must pass; sets the exported risk threshold",
-    )  # fmt: skip
-    parser.add_argument("--learning-rate", type=float, default=defaults.learning_rate)
-    parser.add_argument("--max-epochs", type=int, default=defaults.max_epochs)
-    parser.add_argument("--patience", type=int, default=defaults.patience)
-    parser.add_argument("--seed", type=int, default=defaults.seed)
+    parser = argparse.ArgumentParser(
+        description="Evaluate a trained HGNN on its held-out test edges (no training)."
+    )
+    parser.add_argument("--model-dir", required=True, type=Path, help="folder written by run.py")
+    parser.add_argument("--data", help="data folder, if it moved since training")
     return parser.parse_args()
-
 
 def print_report(results: dict) -> None:
     names = list(results)
@@ -50,14 +28,14 @@ def print_report(results: dict) -> None:
     print(f"{'HGNN':22}" + "".join(f"{n:>20}" for n in names))
     print(f"{'pairs (pos / neg)':22}" + "".join(
         f"{results[n]['positives']:>9} / {results[n]['negatives']:<8}" for n in names
-    ))  # fmt: skip
+    ))
     for key in ["auc", "precision", "recall", "f1", "accuracy"]:
         label = key if key == "auc" else f"{key} @p=0.5"
         values = "".join(f"{results[n]['hgnn']['at_p_0.5'][key]:>20.4f}" for n in names)
         print(f"{label:22}{values}")
     print(f"{'peer coverage AUC':22}" + "".join(
         f"{results[n]['peer_coverage']['auc']:>20.4f}" for n in names
-    ))  # fmt: skip
+    ))
 
     for name in names:
         r = results[name]
@@ -72,7 +50,6 @@ def print_report(results: dict) -> None:
 
 
 def print_calibration(results: dict) -> None:
-    """Threshold chosen on validation data, checked on the test edges."""
     rnd = results["random_negatives"]["hgnn"]["calibrated"]
     hard = results["hard_negatives"]["hgnn"]["calibrated"]
     print("\ncalibrated on validation, measured on test (deny when risk > threshold)")
@@ -93,42 +70,24 @@ def main() -> None:
     args = parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
 
-    graph = load_graph(args.data, args.target_relation)
-    config = TrainConfig(
-        hidden=args.hidden,
-        num_layers=args.num_layers,
-        hard_negative_ratio=args.hard_negative_ratio,
-        target_pass_rate=args.target_pass_rate,
-        learning_rate=args.learning_rate,
-        max_epochs=args.max_epochs,
-        patience=args.patience,
-        test_ratio=args.test_ratio,
-        seed=args.seed,
-    )
-    result = train(graph, config)
-    out_dir = save(result, graph, config, args.out)
+    model, graph, split, metadata = load_trained(args.model_dir, args.data)
+    if "test_data" not in split:
+        sys.exit(f"{args.model_dir} was trained with --test-ratio 0; retrain with a test split")
 
     results = evaluate(
-        result.model, graph, result.test_data, seed=args.seed,
-        val_labels=result.val_labels, val_probs=result.val_probs,
-    )  # fmt: skip
-    metadata_path = out_dir / "metadata.json"
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        model, graph, split["test_data"], seed=metadata["config"]["seed"],
+        val_labels=split["val_labels"], val_probs=split["val_probs"],
+    )
     metadata["test_metrics"] = results
+    metadata_path = args.model_dir / "metadata.json"
     metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
-    print(
-        f"\nbest epoch {result.best_epoch} of {len(result.history)}, val AUC {result.val_auc:.4f}"
-    )
+    print(f"\nbest epoch {metadata['best_epoch']} of {metadata['epochs_run']}, val AUC {metadata['val_auc']:.4f}")
     print_report(results)
     print_calibration(results)
     chosen = metadata["risk_threshold"]
-    print(
-        f"\nexported risk threshold {chosen['value']:.4f}"
-        f" (target pass rate {chosen['target_pass_rate']:.1%})"
-    )
-    print(f"\nsaved to {out_dir} (test metrics in metadata.json)")
-
+    print(f"\nexported risk threshold {chosen['value']:.4f} (target pass rate {chosen['target_pass_rate']:.1%})")
+    print(f"\ntest metrics added to {metadata_path}")
 
 if __name__ == "__main__":
     main()
