@@ -13,6 +13,7 @@ class Settings:
     policy_dir: Path | None = None
     generated_dir: Path = Path("policies/generated")
     appeals_dir: Path = Path("appeals")
+    corax_config: Path | None = None
     object_identity: bool = False
     candidates: int = 8
     tier_limits: TierLimits = field(default_factory=TierLimits)
@@ -29,6 +30,7 @@ class Settings:
             policy_dir=Path(policy_dir) if policy_dir else None,
             generated_dir=Path(env("GENERATED_DIR", "policies/generated")),
             appeals_dir=Path(env("APPEALS_DIR", "appeals")),
+            corax_config=Path(env("CORAX_CONFIG")) if env("CORAX_CONFIG") else None,
             object_identity=env("OBJECT_IDENTITY", "false").lower() in {"1", "true", "yes"},
             candidates=int(env("APPEAL_CANDIDATES", 8)),
             tier_limits=TierLimits(

@@ -1,5 +1,7 @@
 import json
+import time
 
+import jwt
 import numpy as np
 import pytest
 from config import Settings
@@ -16,7 +18,15 @@ STRUCTURE = {
     "dewi": {"member_of": ["SI"]},
 }
 ACCESS = {"budi": ["ani"]}
-ADMIN = {"x-corax-user": "admin_rina"}
+SECRET = "test-secret-with-enough-length-for-hs256"
+
+
+def bearer(user):
+    claims = {"sub": user, "iss": "test-issuer", "aud": "test-api", "exp": int(time.time()) + 300}
+    return {"Authorization": f"Bearer {jwt.encode(claims, SECRET, algorithm='HS256')}"}
+
+
+ADMIN = bearer("admin_rina")
 APPEAL = {"user": "budi", "object": "candra", "action": "read_grades", "reason": "head of program"}
 HEAD_RULE = "user.member_of = object.member_of AND user holds head"
 
@@ -41,9 +51,25 @@ def model_dir(tmp_path):
 
 
 @pytest.fixture
-def settings(model_dir, tmp_path, opa):
+def corax_config(tmp_path):
+    config = {
+        "corax": {
+            "config": {
+                "jwt": {"secret": SECRET, "iss": "test-issuer", "aud": "test-api"},
+                "admin": {"users": ["admin_rina"]},
+            }
+        }
+    }
+    path = tmp_path / "data.json"
+    path.write_text(json.dumps(config), encoding="utf-8")
+    return path
+
+
+@pytest.fixture
+def settings(model_dir, tmp_path, opa, corax_config):
     return Settings(
         model_dir=model_dir,
+        corax_config=corax_config,
         opa_path=opa,
         generated_dir=tmp_path / "generated",
         appeals_dir=tmp_path / "appeals",
@@ -53,7 +79,7 @@ def settings(model_dir, tmp_path, opa):
 
 @pytest.fixture
 def client(settings):
-    with TestClient(create_app(settings)) as client:
+    with TestClient(create_app(settings), headers=ADMIN) as client:
         yield client
 
 
@@ -196,7 +222,33 @@ def test_candidate_out_of_range_is_rejected(client):
 def test_appeals_are_disabled_without_graph_json(model_dir, settings):
     (model_dir / "graph.json").unlink()
 
-    with TestClient(create_app(settings)) as client:
+    with TestClient(create_app(settings), headers=ADMIN) as client:
         assert client.post("/corax/appeals", json=APPEAL).status_code == 503
         assert client.get("/health").json()["appeals"] is False
+        assert client.post("/risk", json={"user": "budi", "object": "ani"}).status_code == 200
+
+
+def test_appeals_require_an_admin_token(settings):
+    with TestClient(create_app(settings)) as anonymous:
+        assert anonymous.post("/corax/appeals", json=APPEAL).status_code == 401
+        assert anonymous.get("/corax/appeals/appeal-0001").status_code == 401
+        assert anonymous.post("/corax/appeals/appeal-0001/confirm", json={}).status_code == 401
+        assert anonymous.post("/corax/appeals", json=APPEAL, headers=bearer("bob")).status_code == 403
+    assert not (settings.generated_dir).exists()
+
+
+def test_a_forged_identity_header_is_ignored(settings):
+    with TestClient(create_app(settings)) as client:
+        spoofed = {**bearer("bob"), "x-corax-user": "admin_rina"}
+        assert client.post("/corax/appeals", json=APPEAL, headers=spoofed).status_code == 403
+
+        record = client.post("/corax/appeals", json=APPEAL, headers={**ADMIN, "x-corax-user": "mallory"}).json()
+        assert {e["by"] for e in record["history"]} == {"admin_rina"}
+
+
+def test_appeals_fail_closed_without_corax_config(settings):
+    unconfigured = Settings(**{**settings.__dict__, "corax_config": None})
+
+    with TestClient(create_app(unconfigured), headers=ADMIN) as client:
+        assert client.post("/corax/appeals", json=APPEAL).status_code == 503
         assert client.post("/risk", json={"user": "budi", "object": "ani"}).status_code == 200

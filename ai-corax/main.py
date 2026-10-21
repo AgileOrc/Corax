@@ -2,8 +2,9 @@ import logging
 from contextlib import asynccontextmanager
 
 from appeals import AppealError, AppealService
+from auth import AdminAuth, AuthError
 from config import Settings
-from fastapi import FastAPI, Header, Request
+from fastapi import Depends, FastAPI, Header, Request
 from fastapi.responses import JSONResponse
 from graph import GraphData
 from pydantic import BaseModel, Field
@@ -54,6 +55,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="ai-corax", lifespan=lifespan)
 
+    app.state.auth = AdminAuth(settings.corax_config)
+
+    @app.exception_handler(AuthError)
+    def auth_error(_: Request, error: AuthError) -> JSONResponse:
+        headers = {"WWW-Authenticate": "Bearer"} if error.status == 401 else None
+        return JSONResponse(status_code=error.status, content={"error": error.message}, headers=headers)
+
+    def require_admin(authorization: str | None = Header(default=None)) -> str:
+        return app.state.auth.authenticate(authorization)
+
     @app.exception_handler(AppealError)
     def appeal_error(_: Request, error: AppealError) -> JSONResponse:
         return JSONResponse(status_code=error.status, content={"error": error.message, **error.detail})
@@ -85,19 +96,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     @app.post("/corax/appeals", status_code=201)
-    def create_appeal(body: AppealRequest, x_corax_user: str | None = Header(default=None)) -> dict:
-        record = appeals().create(body.user, body.object, body.action, body.reason, x_corax_user)
-        log.info("appeal %s by %s: %s -> %s (%s)", record["id"], x_corax_user, body.user, body.object, body.action)
+    def create_appeal(body: AppealRequest, admin: str = Depends(require_admin)) -> dict:
+        record = appeals().create(body.user, body.object, body.action, body.reason, admin)
+        log.info("appeal %s by %s: %s -> %s (%s)", record["id"], admin, body.user, body.object, body.action)
         return record
 
     @app.get("/corax/appeals/{appeal_id}")
-    def get_appeal(appeal_id: str) -> dict:
+    def get_appeal(appeal_id: str, admin: str = Depends(require_admin)) -> dict:
         return appeals().get(appeal_id)
 
     @app.post("/corax/appeals/{appeal_id}/confirm")
-    def confirm_appeal(appeal_id: str, body: ConfirmRequest, x_corax_user: str | None = Header(default=None)) -> dict:
-        record = appeals().confirm(appeal_id, body.candidate, body.acknowledge_scope, x_corax_user)
-        log.info("appeal %s %s by %s", appeal_id, record["status"], x_corax_user)
+    def confirm_appeal(appeal_id: str, body: ConfirmRequest, admin: str = Depends(require_admin)) -> dict:
+        record = appeals().confirm(appeal_id, body.candidate, body.acknowledge_scope, admin)
+        log.info("appeal %s %s by %s", appeal_id, record["status"], admin)
         return record
 
     @app.get("/health")

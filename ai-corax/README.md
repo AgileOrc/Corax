@@ -26,6 +26,7 @@ CORAX_MODEL_DIR=output/exp-hard50 uvicorn main:app --app-dir ai-corax --port 800
 | `AI_RISK_THRESHOLD` | `risk_threshold.value` in `metadata.json` | Optional override |
 | `GENERATED_DIR` | `policies/generated` | Where validated Rego files are written (OPA loads it with `--watch`) |
 | `APPEALS_DIR` | `appeals` | One JSON record per appeal, with its history |
+| `CORAX_CONFIG` | none | The application's `data.json` (the one OPA loads). Its `corax.config.jwt` and `corax.config.admin.users` are used to verify admins; without it the appeal endpoints return 503 |
 | `OPA_PATH` | `opa` | opa binary used to validate generated files |
 | `POLICY_DIR` | none | The application's policy folder; its `opa test` must still pass |
 | `OBJECT_IDENTITY` | `false` | Allow "object is <id>" in candidates (objects that are systems, as in the Amazon data) |
@@ -67,6 +68,22 @@ POST /corax/appeals/appeal-0001/confirm   {"candidate": null}
 - The exception (`<id>-exception.rego`) is written as soon as the appeal is created; the rule
   (`<id>-rule.rego`) only after the admin picks a candidate. Both are validated with opa first and
   written atomically, so OPA never loads half a file.
-- An appeal is confirmed once. The admin id comes from the `x-corax-user` header that OPA sets
-  after verifying the JWT; ai-corax must therefore only be reachable through Envoy for `/corax/`,
-  and `/risk` only from OPA.
+- An appeal is confirmed once.
+
+## Admin authentication
+
+Every appeal endpoint needs `Authorization: Bearer <JWT>` of an admin. ai-corax checks it itself,
+even though OPA already did, so calling ai-corax directly does not bypass the check:
+
+| Check | Result |
+|---|---|
+| No token, not `Bearer`, bad signature, expired, wrong `iss` / `aud`, no `exp` or `sub` | 401 |
+| Valid token, `sub` not in `corax.config.admin.users` | 403 |
+| `CORAX_CONFIG` not set or has no `corax.config.jwt` | 503 (fails closed) |
+
+- Key, issuer, audience and admin list come from the same `data.json` as OPA, re-read when the
+  file changes, so both always agree.
+- `secret` allows only HS256; `cert` (a PEM public key) allows only RS256 / ES256. With a public
+  key ai-corax can verify tokens but never create them.
+- The `x-corax-user` header is ignored; the audit log records the `sub` of the verified token.
+- `/risk` has no authentication and must stay on the internal network, reachable only by OPA.
