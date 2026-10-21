@@ -1,4 +1,7 @@
-# Corax decision: allow = exception_allow OR (policy_allow AND NOT ai_high_risk).
+# Corax decision: allow = admin_allow OR exception_allow OR (policy_allow AND NOT ai_high_risk).
+#
+# admin_allow covers Corax's own admin routes (corax.* actions, e.g. appeals): only users listed in
+# config.admin.users may call them, and nothing else (application rules, appeal rules) can grant them.
 #
 # policy_allow comes from the application's own rules (package app.authz) or from rules added
 # through appeals (package app.generated, files in policies/generated/). exception_allow comes from
@@ -10,10 +13,13 @@
 #
 # Entry points:
 #   allow    boolean
-#   result   object for opa-envoy-plugin: allowed + dynamic_metadata (reason, risk) for Envoy logs
+#   result   object for opa-envoy-plugin: allowed, headers (x-corax-user for the upstream service)
+#            and dynamic_metadata (reason, risk) for Envoy logs
 package corax.authz
 
 default allow := false
+
+allow if admin_allow
 
 allow if exception_allow
 
@@ -22,11 +28,27 @@ allow if {
 	not ai_high_risk
 }
 
-exception_allow if data.app.exceptions.allow with input as request
+corax_action if startswith(request.action, "corax.")
 
-policy_allow if data.app.authz.allow with input as request
+admin_allow if {
+	corax_action
+	user_id in object.get(object.get(config, "admin", {}), "users", [])
+}
 
-policy_allow if data.app.generated.allow with input as request
+exception_allow if {
+	not corax_action
+	data.app.exceptions.allow with input as request
+}
+
+policy_allow if {
+	not corax_action
+	data.app.authz.allow with input as request
+}
+
+policy_allow if {
+	not corax_action
+	data.app.generated.allow with input as request
+}
 
 # --- AI risk check ---------------------------------------------------------
 
@@ -62,6 +84,10 @@ reason := "missing or invalid token" if {
 	not user_id
 } else := "no matching route" if {
 	not route
+} else := "admin action" if {
+	admin_allow
+} else := "admin only" if {
+	corax_action
 } else := "allowed by appeal exception" if {
 	exception_allow
 } else := "denied by policy" if {
@@ -76,7 +102,13 @@ default risk_metadata := {}
 
 risk_metadata := {"corax_risk": ai_risk}
 
+# The verified user id is passed to the upstream service (ai-corax uses it for the appeal audit log).
+default headers := {}
+
+headers := {"x-corax-user": user_id} if allow
+
 result := {
 	"allowed": allow,
+	"headers": headers,
 	"dynamic_metadata": object.union({"corax_reason": reason}, risk_metadata),
 }

@@ -1,8 +1,11 @@
 import logging
 from contextlib import asynccontextmanager
 
+from appeals import AppealError, AppealService
 from config import Settings
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, Request
+from fastapi.responses import JSONResponse
+from graph import GraphData
 from pydantic import BaseModel, Field
 from risk import RiskModel
 
@@ -18,6 +21,16 @@ class RiskResponse(BaseModel):
     threshold: float
     reason: str | None = None
 
+class AppealRequest(BaseModel):
+    user: str = Field(min_length=1, max_length=256)
+    object: str = Field(min_length=1, max_length=256)
+    action: str = Field(min_length=1, max_length=128)
+    reason: str | None = Field(default=None, max_length=1000)
+
+class ConfirmRequest(BaseModel):
+    candidate: int | None = None
+    acknowledge_scope: bool = False
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
 
@@ -31,9 +44,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             len(app.state.model.objects),
             app.state.model.threshold,
         )
+        app.state.appeals = None
+        if (settings.model_dir / "graph.json").exists():
+            graph = GraphData.load(settings.model_dir)
+            app.state.appeals = AppealService(app.state.model, graph, settings)
+        else:
+            log.warning("no graph.json in %s: appeals are disabled", settings.model_dir)
         yield
 
     app = FastAPI(title="ai-corax", lifespan=lifespan)
+
+    @app.exception_handler(AppealError)
+    def appeal_error(_: Request, error: AppealError) -> JSONResponse:
+        return JSONResponse(status_code=error.status, content={"error": error.message, **error.detail})
+
+    def appeals() -> AppealService:
+        if app.state.appeals is None:
+            raise AppealError(503, "appeals are disabled: the model folder has no graph.json")
+        return app.state.appeals
 
     @app.post("/risk")
     def risk(request: RiskRequest) -> RiskResponse:
@@ -56,6 +84,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             reason=result.reason,
         )
 
+    @app.post("/corax/appeals", status_code=201)
+    def create_appeal(body: AppealRequest, x_corax_user: str | None = Header(default=None)) -> dict:
+        record = appeals().create(body.user, body.object, body.action, body.reason, x_corax_user)
+        log.info("appeal %s by %s: %s -> %s (%s)", record["id"], x_corax_user, body.user, body.object, body.action)
+        return record
+
+    @app.get("/corax/appeals/{appeal_id}")
+    def get_appeal(appeal_id: str) -> dict:
+        return appeals().get(appeal_id)
+
+    @app.post("/corax/appeals/{appeal_id}/confirm")
+    def confirm_appeal(appeal_id: str, body: ConfirmRequest, x_corax_user: str | None = Header(default=None)) -> dict:
+        record = appeals().confirm(appeal_id, body.candidate, body.acknowledge_scope, x_corax_user)
+        log.info("appeal %s %s by %s", appeal_id, record["status"], x_corax_user)
+        return record
+
     @app.get("/health")
     def health() -> dict:
         model: RiskModel = app.state.model
@@ -66,6 +110,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "risk_threshold": model.threshold,
             "users": len(model.users),
             "objects": len(model.objects),
+            "appeals": app.state.appeals is not None,
         }
 
     return app

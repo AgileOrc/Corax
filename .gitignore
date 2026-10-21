@@ -8,3 +8,4 @@ __pycache__/
 # Generated artefacts (embeddings, trained models)
 output/
 datasets/
+opa.exe
