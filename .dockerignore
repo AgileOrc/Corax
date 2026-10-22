@@ -1,0 +1,4 @@
+# Only service/ goes into the image; datasets/ and output/ are gigabytes.
+*
+!service/
+**/__pycache__

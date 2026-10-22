@@ -1,0 +1,34 @@
+{
+  "corax": {
+    "config": {
+      "jwt": {
+        "secret": "corax-demo-secret-not-for-production",
+        "iss": "corax-demo",
+        "aud": "campus-api"
+      },
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/students/:id/grades",
+          "action": "read_grades",
+          "resource_type": "student"
+        },
+        {
+          "method": "GET",
+          "path": "/students/:id/profile",
+          "action": "read_profile",
+          "resource_type": "student"
+        }
+      ],
+      "ai": {
+        "url": "http://service:8000",
+        "timeout": "500ms"
+      },
+      "admin": {
+        "users": [
+          "admin_rina"
+        ]
+      }
+    }
+  }
+}
