@@ -3,19 +3,9 @@ name = "corax"
 version = "0.1.0"
 requires-python = ">=3.11"
 
-[tool.ruff]
-line-length = 100
-target-version = "py311"
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP"]
-# No line length limit; ruff is used for bug checks only, not to reformat code.
-# E402: scripts set a warnings filter or sys.path before their imports on purpose.
-ignore = ["E501", "E402"]
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["hgnn-job", "scripts", "ai-corax"]
+pythonpath = [".", "scripts", "scripts/prepare", "scripts/evaluate", "service"]
 # Noise from third-party libraries on Python 3.13, not from Corax code.
 filterwarnings = [
     "ignore::DeprecationWarning:torch_geometric.*",

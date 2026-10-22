@@ -21,8 +21,13 @@
         }
       ],
       "ai": {
-        "url": "http://ai-corax:8000",
+        "url": "http://corax-service:8000",
         "timeout": "20ms"
+      },
+      "admin": {
+        "users": [
+          "admin_rina"
+        ]
       }
     }
   }

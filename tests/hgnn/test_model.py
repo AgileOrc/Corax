@@ -2,8 +2,9 @@ from pathlib import Path
 
 import pytest
 import torch
-from corax_hgnn.graph import load_graph
-from corax_hgnn.model import HGNN, link_logits, link_probability
+
+from hgnn.graph import load_graph
+from hgnn.model import HGNN, link_logits, link_probability
 
 TOY = Path(__file__).parent / "fixtures" / "toy_graph"
 

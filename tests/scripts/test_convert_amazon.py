@@ -1,7 +1,8 @@
 import csv
 
 from convert_amazon import TARGET_RELATION, convert
-from corax_hgnn.graph import load_graph
+
+from hgnn.graph import load_graph
 
 SAMPLE = """\
 HOST_1,PERMGROUP_7,PERSON_BUSINESS_TITLE,PERSON_DEPTNAME,PERSON_ID,PERSON_MGR_ID,SYSTEM_SUPPORT_3

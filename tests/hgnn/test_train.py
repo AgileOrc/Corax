@@ -2,8 +2,9 @@ from pathlib import Path
 
 import pytest
 import torch
-from corax_hgnn.graph import load_graph
-from corax_hgnn.train import TrainConfig, roc_auc, split_edges, train
+
+from hgnn.graph import load_graph
+from hgnn.train import TrainConfig, roc_auc, split_edges, train
 
 TOY = Path(__file__).parent / "fixtures" / "toy_graph"
 

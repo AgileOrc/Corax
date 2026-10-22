@@ -6,7 +6,9 @@ def main() -> None:
         module = importlib.import_module(name)
         print(f"{name:16} {getattr(module, '__version__', 'ok')}")
 
-    from torch_geometric.nn import SAGEConv, to_hetero
+    nn = importlib.import_module("torch_geometric.nn")
+    for name in ["SAGEConv", "to_hetero"]:
+        getattr(nn, name)
 
     print("SAGEConv and to_hetero OK")
 
