@@ -69,6 +69,10 @@ POST /corax/appeals/appeal-0001/confirm   {"candidate": null}
   (`<id>-rule.rego`) only after the admin picks a candidate. Both are validated with opa first and
   written atomically, so OPA never loads half a file.
 - An appeal is confirmed once.
+- Candidates skip values that are too specific to the appealed pair: a value both the user and the
+  object have (the `user.X = object.Y` candidate covers it for every value), and a value of an
+  attribute with several values (e.g. one of the courses a student takes). Otherwise one slice per
+  value would rank above the general rule, because it opens fewer pairs.
 
 ## Admin authentication
 

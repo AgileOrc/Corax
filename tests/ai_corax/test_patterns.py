@@ -1,5 +1,5 @@
 import pytest
-from patterns import Predicate, candidates, predicates_for, sample_pairs
+from patterns import Predicate, candidates, predicates_for, sample_pairs, too_specific
 
 HEAD = "position_head_of_program"
 
@@ -75,6 +75,22 @@ def test_candidates_go_from_narrowest_to_broadest():
     assert ladder(found) == [
         ("user.member_of = object.member_of AND user holds " + HEAD, 1, 1),
         ("user teaches IF201", 1, 3),
+        ("user holds " + HEAD, 2, 7),
+        ("user.member_of = object.member_of", 4, 8),
+    ]
+
+
+def test_values_on_both_sides_or_from_multi_valued_attributes_are_too_specific():
+    assert too_specific(STRUCTURE, APPEAL) == {"IF"}
+    assert too_specific(STRUCTURE, ("andi", "candra")) == {"IF", "IF202", "IF201"}
+
+
+def test_too_specific_values_can_be_kept():
+    found = candidates(STRUCTURE, ACCESS, APPEAL, LECTURERS, STUDENTS, specific_values=True)
+
+    assert ladder(found) == [
+        ("user.member_of = object.member_of AND user holds " + HEAD, 1, 1),
+        ("user teaches IF201", 1, 3),
         ("user.member_of = object.member_of AND user member_of IF", 2, 4),
         ("user holds " + HEAD, 2, 7),
         ("user.member_of = object.member_of", 4, 8),
@@ -100,7 +116,7 @@ def test_existing_access_and_the_appeal_are_never_counted():
 def test_candidates_opening_the_same_pairs_are_listed_once():
     texts = [c.text() for c in candidates(STRUCTURE, ACCESS, APPEAL, LECTURERS, STUDENTS)]
 
-    assert "user holds " + HEAD + " AND user member_of IF" not in texts
+    assert "user holds " + HEAD + " AND user teaches IF201" not in texts
     assert len(texts) == len(set(texts))
 
 
@@ -149,9 +165,9 @@ def test_role_and_object_candidate_for_permission_groups():
     found = candidates(STRUCTURE, ACCESS, APPEAL, LECTURERS, STUDENTS, object_identity=True)
 
     by_text = {c.text(): c for c in found}
-    role_rule = by_text["object is fajar AND user member_of IF"]
+    role_rule = by_text["object is fajar AND user holds " + HEAD]
     assert (role_rule.users, role_rule.pairs) == (1, 1)
-    assert role_rule.examples == (("rina", "fajar"),)
+    assert role_rule.examples == (("sari", "fajar"),)
     assert not role_rule.estimated
 
 

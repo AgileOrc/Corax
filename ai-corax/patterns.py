@@ -74,6 +74,15 @@ def predicates_for(
                 found.add(Predicate("shared", user_relation, object_relation))
     return sorted(found)
 
+def too_specific(structure: Structure, appeal: Pair) -> frozenset[str]:
+    user_facts, object_facts = structure.get(appeal[0], {}), structure.get(appeal[1], {})
+    user_nodes = {n for nodes in user_facts.values() for n in nodes}
+    object_nodes = {n for nodes in object_facts.values() for n in nodes}
+    multi_valued = {
+        n for facts in (user_facts, object_facts) for nodes in facts.values() if len(nodes) > 1 for n in nodes
+    }
+    return frozenset((user_nodes & object_nodes) | multi_valued)
+
 def sample_pairs(
     users: Sequence[str],
     objects: Sequence[str],
@@ -101,14 +110,17 @@ def candidates(
     max_size: int = 2,
     object_values: bool = False,
     object_identity: bool = False,
+    specific_values: bool = False,
     exact_limit: int = 5_000_000,
     sample_size: int = 20_000,
 ) -> list[Candidate]:
     identities = frozenset(users) | frozenset(objects)
+    specific = frozenset() if specific_values else too_specific(structure, appeal)
     vocabulary = [
         p
         for p in predicates_for(structure, *appeal, identities, object_identity)
-        if object_values or p.kind != "object_has"
+        if (object_values or p.kind != "object_has")
+        and not (p.kind in ("user_has", "object_has") and p.other in specific)
     ]
     combos = [c for size in range(1, max_size + 1) for c in combinations(vocabulary, size)]
 
