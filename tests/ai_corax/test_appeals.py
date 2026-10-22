@@ -73,7 +73,7 @@ def settings(model_dir, tmp_path, opa, corax_config):
         opa_path=opa,
         generated_dir=tmp_path / "generated",
         appeals_dir=tmp_path / "appeals",
-        tier_limits=TierLimits(max_users=1, max_pairs=1, max_mean_risk=1.0),
+        tier_limits=TierLimits(max_user_share=1.0, max_pairs=1, max_mean_risk=1.0),
     )
 
 

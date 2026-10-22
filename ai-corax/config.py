@@ -34,7 +34,7 @@ class Settings:
             object_identity=env("OBJECT_IDENTITY", "false").lower() in {"1", "true", "yes"},
             candidates=int(env("APPEAL_CANDIDATES", 8)),
             tier_limits=TierLimits(
-                max_users=int(env("AUTO_APPLY_MAX_USERS", defaults.max_users)),
+                max_user_share=float(env("AUTO_APPLY_MAX_USER_SHARE", defaults.max_user_share)),
                 max_pairs=int(env("AUTO_APPLY_MAX_PAIRS", defaults.max_pairs)),
                 max_mean_risk=float(env("AUTO_APPLY_MAX_MEAN_RISK", defaults.max_mean_risk)),
             ),

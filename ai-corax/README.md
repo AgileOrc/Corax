@@ -31,7 +31,10 @@ CORAX_MODEL_DIR=output/exp-hard50 uvicorn main:app --app-dir ai-corax --port 800
 | `POLICY_DIR` | none | The application's policy folder; its `opa test` must still pass |
 | `OBJECT_IDENTITY` | `false` | Allow "object is <id>" in candidates (objects that are systems, as in the Amazon data) |
 | `APPEAL_CANDIDATES` | `8` | How many candidate patterns an appeal returns |
-| `AUTO_APPLY_MAX_USERS`, `AUTO_APPLY_MAX_PAIRS`, `AUTO_APPLY_MAX_MEAN_RISK` | `5`, `50`, `0.5` | Above any of these a rule is "large" and needs `acknowledge_scope` |
+| `AUTO_APPLY_MAX_USER_SHARE` | `0.4` | Share of all users (0–1, e.g. `0.5` = 50%) that may get new access; above it a rule is "large" |
+| `AUTO_APPLY_MAX_PAIRS`, `AUTO_APPLY_MAX_MEAN_RISK` | `50`, `0.5` | New (user, object) pairs and their mean risk; above either a rule is "large" |
+
+A "large" rule needs `acknowledge_scope`. No regulation fixes these numbers (ISO 27001, NIST 800-53 and PCI DSS ask that access grants are approved and logged, not for a size limit); set them to the organisation's risk appetite. `AUTO_APPLY_MAX_USER_SHARE=0` makes every rule wait for an admin.
 
 Appeals need `graph.json` and `access.json` in the model folder; without them only `/risk` runs.
 
