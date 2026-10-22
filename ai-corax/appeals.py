@@ -32,6 +32,8 @@ class AppealService:
         self.graph = graph
         self.index = SimilarityIndex(model)
         self.settings = settings
+        # generated files only hold for this kind of resource (rules.type_check)
+        self.resource_type = settings.resource_type or model.metadata["target_edge_type"][2]
         self.lock = threading.Lock()
 
     def create(self, user: str, obj: str, action: str, reason: str | None, by: str | None) -> dict:
@@ -39,10 +41,12 @@ class AppealService:
             raise AppealError(404, f"unknown user {user!r}")
         if obj not in self.model.objects:
             raise AppealError(404, f"unknown object {obj!r}")
+        if self.graph.has_access(user, obj):
+            raise AppealError(409, f"{user} already has access to {obj}: there is nothing to appeal")
 
         with self.lock:
             appeal_id = self._next_id()
-            exception = render_exception(appeal_id, user, action, obj)
+            exception = render_exception(appeal_id, user, action, obj, self.resource_type)
             report = self._validate(exception, "app.exceptions", action, self._exception_pairs(user, obj))
             if not report.ok:
                 raise AppealError(422, "the exception failed validation", {"validation": _checks(report)})
@@ -126,6 +130,7 @@ class AppealService:
                 action,
                 predicates,
                 {"users": scope.users, "pairs": scope.pairs, "tier": scope.tier, "approved_by": by or ""},
+                self.resource_type,
             )
             expected = expected_decisions(
                 self.graph.structure,
@@ -161,6 +166,7 @@ class AppealService:
                 expected,
                 self.settings.opa_path,
                 self.settings.policy_dir,
+                self.resource_type,
             )
         except (OSError, RuntimeError) as error:
             raise AppealError(503, f"opa is not available: {error}") from error

@@ -31,6 +31,7 @@ CORAX_MODEL_DIR=output/exp-hard50 uvicorn main:app --app-dir ai-corax --port 800
 | `POLICY_DIR` | none | The application's policy folder; its `opa test` must still pass |
 | `OBJECT_IDENTITY` | `false` | Allow "object is <id>" in candidates (objects that are systems, as in the Amazon data) |
 | `APPEAL_CANDIDATES` | `8` | How many candidate patterns an appeal returns |
+| `APPEAL_RESOURCE_TYPE` | object type of the HGNN's target edge type | The route `resource_type` that exceptions and rules are limited to (`input.resource.type`) |
 | `AUTO_APPLY_MAX_USERS`, `AUTO_APPLY_MAX_PAIRS`, `AUTO_APPLY_MAX_MEAN_RISK` | `5`, `50`, `0.5` | Above any of these a rule is "large" and needs `acknowledge_scope` |
 
 Appeals need `graph.json` and `access.json` in the model folder; without them only `/risk` runs.
@@ -68,6 +69,11 @@ POST /corax/appeals/appeal-0001/confirm   {"candidate": null}
 - The exception (`<id>-exception.rego`) is written as soon as the appeal is created; the rule
   (`<id>-rule.rego`) only after the admin picks a candidate. Both are validated with opa first and
   written atomically, so OPA never loads half a file.
+- Both files check `input.resource.type`, so they never hold for another kind of resource (another
+  route with the same action, or an id that also names a node of another type). Validation checks
+  this too: the same pairs as another type must all be denied (`resource type`).
+- An appeal for a pair the user can already access (`access.json`) is refused with 409: there is
+  nothing to appeal.
 - An appeal is confirmed once.
 
 ## Admin authentication

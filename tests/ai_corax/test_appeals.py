@@ -102,6 +102,7 @@ def test_appeal_applies_the_exception_at_once(client, settings):
     assert 'input.user.id == "budi"' in exception
     assert 'input.resource.id == "candra"' in exception
     assert 'input.action == "read_grades"' in exception
+    assert 'input.resource.type == "student"' in exception
     assert [e["event"] for e in record["history"]] == ["created", "exception_applied"]
     assert all(e["by"] == "admin_rina" for e in record["history"])
 
@@ -138,6 +139,8 @@ def test_small_rule_is_validated_and_written(client, settings):
     rule = (settings.generated_dir / "appeal-0001-rule.rego").read_text(encoding="utf-8")
     assert rule.startswith("package app.generated")
     assert '"head" in data.corax.graph[input.user.id]["holds"]' in rule
+    assert 'input.resource.type == "student"' in rule
+    assert [check["name"] for check in confirmed["validation"]][-1] == "resource type"
     assert confirmed["history"][-1] == {**confirmed["history"][-1], "event": "rule_applied", "by": "admin_rina"}
 
 
@@ -252,3 +255,21 @@ def test_appeals_fail_closed_without_corax_config(settings):
     with TestClient(create_app(unconfigured), headers=ADMIN) as client:
         assert client.post("/corax/appeals", json=APPEAL).status_code == 503
         assert client.post("/risk", json={"user": "budi", "object": "ani"}).status_code == 200
+
+
+def test_appeal_for_access_already_held_is_refused(client, settings):
+    # budi already reads ani: an exception or a rule would change nothing
+    response = client.post("/corax/appeals", json={**APPEAL, "object": "ani"})
+
+    assert response.status_code == 409
+    assert not settings.generated_dir.exists()
+
+
+def test_resource_type_can_be_configured(settings):
+    named = Settings(**{**settings.__dict__, "resource_type": "transcript"})
+
+    with TestClient(create_app(named), headers=ADMIN) as client:
+        record = client.post("/corax/appeals", json=APPEAL).json()
+
+    exception = (settings.generated_dir / f"{record['id']}-exception.rego").read_text(encoding="utf-8")
+    assert 'input.resource.type == "transcript"' in exception

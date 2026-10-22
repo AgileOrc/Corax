@@ -90,12 +90,14 @@ def show_pick(args, model, graph, index, chosen) -> None:
     for reason in scope.reasons:
         print(f"  needs acknowledgement: {reason}")
 
-    exception = render_exception("appeal-preview", args.user, args.action, args.object)
+    resource_type = model.metadata["target_edge_type"][2]
+    exception = render_exception("appeal-preview", args.user, args.action, args.object, resource_type)
     rule = render_rule(
         "appeal-preview",
         args.action,
         chosen.predicates,
         {"users": scope.users, "pairs": scope.pairs, "tier": scope.tier},
+        resource_type,
     )
     print(f"\n--- appeal-preview-exception.rego\n{exception}\n--- appeal-preview-rule.rego\n{rule}")
 
@@ -103,8 +105,9 @@ def show_pick(args, model, graph, index, chosen) -> None:
         graph.structure, chosen.predicates, opened, index.user_ids, index.object_ids, appeal
     )
     report = validate(
-        rule, "app.generated", args.action, graph.structure, expected, args.opa, args.policy_dir
-    )
+        rule, "app.generated", args.action, graph.structure, expected, args.opa, args.policy_dir,
+        resource_type,
+    )  # fmt: skip
     print("validation")
     for check in report.checks:
         print(f"  {'ok  ' if check.ok else 'FAIL'} {check.name:12} {check.detail}")

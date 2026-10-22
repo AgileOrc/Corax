@@ -41,6 +41,10 @@ Appeals write two kinds of files to `policies/generated/`, both defining `allow`
 | `app.exceptions` | Only the exact (user, action, object) the admin approved | Skipped: the admin reviewed it |
 | `app.generated` | The broader rule mined from similar cases | Yes |
 
+Both kinds only hold for the resource type of the appealed object (`input.resource.type`), so a route's
+`resource_type` must be the graph's node type of its objects, or ai-corax must be told the name
+(`APPEAL_RESOURCE_TYPE`).
+
 **2. Configuration** under `data.corax.config` (see `config.example.json`):
 
 | Key | Meaning |

@@ -1,7 +1,8 @@
 # Appeal feature: test report
 
 Tests of the appeal feature after merging Vien's `feat/ai-corax-appeals` (commits `c4b4492`, `c61302c`) into branch
-`fred`, with the demo stack adapted to it. Run on 2026-10-21.
+`fred` (merge commit `6ed0dc8`), with the demo stack adapted to it and the fixes for findings 1 and 2 applied. Run on
+2026-10-22 on a stack built from that code.
 
 | | |
 |---|---|
@@ -15,45 +16,62 @@ Tests of the appeal feature after merging Vien's `feat/ai-corax-appeals` (commit
 
 | Suite | What it covers | Result |
 |---|---|---|
-| Unit and API tests (`pytest tests`) | ai-corax (incl. Vien's appeal and auth tests), hgnn-job, scripts, policy and demo configuration | **209 passed** |
+| Unit and API tests (`pytest tests`) | ai-corax (incl. Vien's appeal and auth tests and 6 new ones for the fixes), hgnn-job, scripts, policy and demo configuration | **215 passed** |
 | OPA tests (`opa test policy deploy/demo-app/policy`) | Framework incl. the admin routes, demo application rules | **42/42** |
-| End to end through the gateway | HTTP requests to Envoy → OPA → ai-corax / app on a fresh stack, plus direct calls to ai-corax | **73/74**, the one failure is finding 1 |
+| End to end through the gateway | HTTP requests to Envoy → OPA → ai-corax / app on a fresh stack, plus direct calls to ai-corax and queries to the running OPA | **83/85**, both failures are finding 8 |
 | Console in a browser | Headless Edge driven through the DevTools protocol, clicking like a user | **15/15** |
 
 ## Findings
 
-1. **An appeal for access the user already has is accepted.** `POST /corax/appeals` for a pair the current policy
-   already allows returns 201, writes a redundant exception and offers candidate patterns that generalise the current
-   policy itself. Suggestion: answer 409 in `AppealService.create` when `graph.has_access(user, obj)`.
-2. **With the default tier limits, every enterprise rule is "large".** No small-tier candidate was found among 400
+1. **Fixed: an appeal for access the user already has was accepted.** It wrote a redundant exception and offered
+   candidate patterns that generalise the current policy itself. `AppealService.create` now answers 409 when
+   `graph.has_access(user, obj)`.
+2. **Fixed: generated rules and exceptions held for any kind of resource.** A rule only checked `input.action` and the
+   graph relations, so the manager rule mined from documents also allowed `read` on `project_sales2`, because projects
+   have `owned_by` edges too; any future route with the same action (`GET /projects/:id`) would have been opened. Both
+   files now also check `input.resource.type` (`rules.type_check`); the type is the object type of the HGNN's target
+   edge type, or `APPEAL_RESOURCE_TYPE`. Validation gained a `resource type` check: the same pairs as another type must
+   all be denied, so an unscoped rule is not written.
+3. **With the default tier limits, every enterprise rule is "large".** No small-tier candidate was found among 400
    random denied pairs: the pairs a rule opens are unusual for the HGNN by nature, so their mean risk (0.6 to 0.99) is
    above `AUTO_APPLY_MAX_MEAN_RISK` = 0.5, and most rules open more than 50 pairs. Every rule therefore needs
-   `acknowledge_scope`. The small path was tested with raised limits (`AUTO_APPLY_MAX_PAIRS=100`,
-   `AUTO_APPLY_MAX_MEAN_RISK=0.9`).
-3. **"Narrowest first" can rank an appellant-only pattern first.** For `employee_E040 → document_D080`, candidate #1
-   is "user located_in site_frankfurt AND user member_of team_engineering2": it matches only E040 and opens all
-   83 documents for him. Its tier is large (83 pairs, mean risk 0.99), so it needs `acknowledge_scope`, but an admin
-   could still confirm it by mistake. A possible change in `patterns.py`: drop or flag candidates whose only user is the
-   appellant, or rank by kNN support.
-4. **Fixed in the deployment: OPA did not start.** OPA loads `/runtime/generated` at start, but `AppealService` creates
-   the folder only when it writes the first file, so OPA exited ("stat /runtime/generated: no such file or directory")
-   and Envoy, with `failure_mode_allow: false`, denied every request. `deploy/ai-corax.Dockerfile` now creates the
-   folder before ai-corax starts; creating it in `AppealService.__init__` would fix it for any deployment.
-5. **Fixed in the console:** it read the admins from `config.admins`; it now reads `config.admin.users`.
-6. **OPA picks up file changes quickly.** An exception was effective at the first poll after the appeal (under
+   `acknowledge_scope`. The small path was tested with raised limits.
+4. **"Narrowest first" can rank an appellant-only pattern first.** For `employee_E040 → document_D080`, candidate #1
+   ("user located_in site_frankfurt AND user member_of team_engineering2") matches only E040 and opens all 83
+   documents for him. Its tier is large, so it needs `acknowledge_scope`, but an admin could confirm it by mistake.
+   A possible change in `patterns.py`: drop or flag candidates whose only user is the appellant, or rank by kNN support.
+5. **Fixed in the deployment: OPA did not start.** OPA loads `/runtime/generated` at start, but `AppealService`
+   creates the folder only when it writes the first file, so OPA exited and Envoy denied every request.
+   `deploy/ai-corax.Dockerfile` creates the folder before ai-corax starts; creating it in `AppealService.__init__`
+   would fix it for any deployment.
+6. **Fixed in the console:** it read the admins from `config.admins`; it now reads `config.admin.users`.
+7. **OPA picks up generated files quickly.** An exception was effective at the first poll after the appeal (under
    0.25 s); deleting a rule or exception file revoked the access within 0.3 s.
+8. **Open: OPA does not see edits of `corax-config.json`.** `deploy/docker-compose.yml` mounts the config (and
+   `graph.json`) as single files, and OPA's file watch gets no event when such a file is edited in place. After adding
+   `admin_02`, OPA still had `["admin_01"]` 20 s later; it loaded the change only when an unrelated file appeared in
+   `generated/` (any reload reads every file again). ai-corax re-reads the file at once, so the two disagree until
+   OPA's next reload or restart:
+   - a new admin is refused at the gateway;
+   - a removed admin still passes OPA, but ai-corax refuses them (403), so appeals stay protected;
+   - a rotated JWT secret is not used by OPA, so tokens signed with the old secret still pass for `/documents`;
+   - a new `graph.json` (retrained HGNN) is not used by the generated rules.
+   An earlier run of this report said admins can be changed without a restart; that pass came from an appeal written
+   at the same moment, which made OPA reload. A fix is to mount folders instead of single files, or to restart OPA
+   after changing the config.
 
-## End to end (74 checks)
+## End to end (85 checks)
 
 Requests go to Envoy at `:8180` with JWTs signed like the console does; the "ai-corax checks the JWT" checks call
-ai-corax inside its container, bypassing Envoy and OPA. Files and records are read inside the ai-corax container.
+ai-corax inside its container, bypassing Envoy and OPA; "live OPA" checks ask the running OPA through its REST API
+inside the Docker network. Files and records are read inside the ai-corax container.
 
 | Area | Checks | What is verified |
 |---|---|---|
 | Only admins pass the gateway | 8 | `POST /corax/appeals` without a token, as an employee, with a forged signature, an expired token or a wrong audience: 403. Employees get 403 on `GET` and `confirm`. Nothing is written |
 | ai-corax checks the JWT itself | 8 | Called directly: no token, wrong signature, expired, wrong audience, no `exp`: 401; a valid employee token: 403 on `POST` and `GET`. Nothing is written |
 | Input validation | 7 | Empty user, missing object, missing action: 422. Unknown user, object or appeal: 404. Nothing is written |
-| Manager appeal (large, acknowledged) | 21 | 201 with a server-assigned `appeal-NNNN`; exception written and effective at once, only for that pair; candidate out of range or 0: 422; the expected rule is a candidate; confirming it without `acknowledge_scope` → 409 with the scope, nothing written; with it → `rule_applied` after syntax, whitelist, app tests and equivalence; the Engineering manager gets access through the rule; a second confirm or `candidate: null` afterwards: 409; `GET` shows the history (created, exception_applied, rule_applied, each by `admin_01`); the rule file records `approved_by` |
+| Manager appeal (large, acknowledged) | 25 | 201 with a server-assigned `appeal-NNNN`; exception written and effective at once, only for that pair; candidate out of range or 0: 422; the expected rule is a candidate; confirming it without `acknowledge_scope` → 409 with the scope, nothing written; with it → `rule_applied` after syntax, whitelist, app tests, equivalence and resource type; the Engineering manager gets access through the rule; a second confirm or `candidate: null` afterwards: 409; `GET` shows the history (created, exception_applied, rule_applied, each by `admin_01`); the rule records `approved_by`; rule and exception check `input.resource.type == "document"`; the running OPA allows the sales manager's document through the rule but not `project_sales2` |
 | Security officer appeal (large, acknowledged) | 4 | Rule applied; an opened pair with low risk (0.35) is allowed; an opened pair with risk 1.000 > 0.995 is denied by the AI check; the appellant's own pair passes (exception, no AI check) |
 | One-off appeal (exception only) | 4 | `candidate: null` → `exception_only`; only the exception file exists; the engineer gets exactly that pair; confirming a candidate afterwards: 409 |
 | BOLA | 1 | The BOLA request stays denied after all appeals |
@@ -61,7 +79,8 @@ ai-corax inside its container, bypassing Envoy and OPA. Files and records are re
 | Restart | 3 | An open appeal survives `docker restart` of ai-corax and can then be confirmed; ids continue after the restart |
 | Concurrency | 4 | Five appeals at the same time: all created, five different ids, five exception files, five records |
 | Odd URLs | 6 | `..%2F..%2Fstate%2Fx/confirm` 404, `%2e%2e/confirm` 404, `a/b/confirm` 403, `A%00x` 404, a 300-character id 404; nothing written |
-| Access already held | 2 | The pair is allowed today; the appeal is still accepted (**fails**, finding 1) |
+| Access already held | 2 | The pair is allowed today; the appeal is refused with 409 (finding 1) |
+| Admin list reload | 7 | `admin_02` is refused; after adding it to `admin.users` in place, ai-corax accepts it at once, but the gateway still refuses it and OPA still has the old list (**2 failures**, finding 8); after undoing the change (file restored byte for byte) both refuse it |
 | Small tier | 3 | With raised limits, confirming the manager rule needs no acknowledgement; the rule opens access |
 
 ## Console in a browser (15 checks)

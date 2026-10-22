@@ -16,6 +16,9 @@ class Settings:
     corax_config: Path | None = None
     object_identity: bool = False
     candidates: int = 8
+    # the route resource_type that generated rules and exceptions are limited to;
+    # None: the object node type of the HGNN's target edge type
+    resource_type: str | None = None
     tier_limits: TierLimits = field(default_factory=TierLimits)
 
     @classmethod
@@ -33,6 +36,7 @@ class Settings:
             corax_config=Path(env("CORAX_CONFIG")) if env("CORAX_CONFIG") else None,
             object_identity=env("OBJECT_IDENTITY", "false").lower() in {"1", "true", "yes"},
             candidates=int(env("APPEAL_CANDIDATES", 8)),
+            resource_type=env("APPEAL_RESOURCE_TYPE") or None,
             tier_limits=TierLimits(
                 max_users=int(env("AUTO_APPLY_MAX_USERS", defaults.max_users)),
                 max_pairs=int(env("AUTO_APPLY_MAX_PAIRS", defaults.max_pairs)),
