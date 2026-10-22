@@ -116,6 +116,25 @@ def test_write_produces_a_scenario_for_the_hidden_rule(policy, tmp_path):
     assert scenarios.scenarios[0].hidden == {("user_chair1", "res_tr1")}
 
 
+def test_all_rules_writes_one_data_folder_per_rule_with_hidden_pairs(policy, tmp_path):
+    written = c.write_all(tmp_path, policy)
+
+    assert sorted(written) == [1, 2, 3, 4]
+    assert all(summary is not None for summary in written.values())
+    for index in written:
+        scenarios = appeal_scenarios.load(tmp_path / f"rule_{index:02d}" / "data" / "scenarios.json")
+        assert scenarios.scenarios[0].name == f"rule_{index:02d}"
+
+
+def test_all_rules_skips_a_rule_another_rule_already_covers(tmp_path):
+    policy = c.parse(SAMPLE + "rule(; type in {transcript}; {read}; uid=student;)\n")
+
+    written = c.write_all(tmp_path, policy)
+
+    assert written[3] is None and written[5] is None
+    assert not (tmp_path / "rule_03").exists()
+
+
 def test_old_scenario_files_keep_the_defaults(tmp_path):
     (tmp_path / "scenarios.json").write_text(
         json.dumps({"target_relation": "accessed", "scenarios": []}), encoding="utf-8"

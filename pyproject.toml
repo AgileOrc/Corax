@@ -15,7 +15,7 @@ ignore = ["E501", "E402"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["hgnn-job", "scripts", "ai-corax"]
+pythonpath = ["hgnn-job", "scripts", "scripts/prepare", "scripts/evaluate", "ai-corax"]
 # Noise from third-party libraries on Python 3.13, not from Corax code.
 filterwarnings = [
     "ignore::DeprecationWarning:torch_geometric.*",

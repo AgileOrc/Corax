@@ -1,5 +1,5 @@
 # Source: https://archive.ics.uci.edu/dataset/216/amazon+access+samples
-# Command: python scripts/convert_amazon.py datasets/amzn-anon-access-samples-2.0.csv datasets/amazon-graph
+# Command: python scripts/prepare/convert_amazon.py datasets/amzn-anon-access-samples-2.0.csv datasets/amazon-graph
 
 import argparse
 import csv

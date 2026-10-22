@@ -22,7 +22,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out", default="output/hgnn", help="output folder (default: output/hgnn)")
     parser.add_argument(
         "--test-ratio", type=float, default=defaults.test_ratio,
-        help="held-out edges for scripts/evaluate_hgnn.py (default 0.1: 80/10/10); 0 = none",
+        help="held-out edges for scripts/evaluate/evaluate_hgnn.py (default 0.1: 80/10/10); 0 = none",
     )
     parser.add_argument("--hidden", type=int, default=defaults.hidden)
     parser.add_argument("--num-layers", type=int, default=defaults.num_layers)
@@ -78,7 +78,7 @@ def main() -> None:
           f" (target pass rate {config.target_pass_rate:.1%})")  # fmt: skip
     print(f"saved to        {out_dir}")
     if config.test_ratio > 0:
-        print(f"evaluate with   python scripts/evaluate_hgnn.py --model-dir {out_dir}")
+        print(f"evaluate with   python scripts/evaluate/evaluate_hgnn.py --model-dir {out_dir}")
 
 if __name__ == "__main__":
     main()

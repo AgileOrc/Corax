@@ -49,7 +49,7 @@ Admin ──► Envoy ──► OPA (is the caller an admin?) ──► AI-Corax
   1. Apply an exact exception for the appellant only ─────┤ (immediately)
   2. kNN: similar (user, object) pairs the policy still denies
   3. Pattern miner: shared attributes/relations
-  4. Scope: affected users, changed decisions, category-tree depth
+  4. Scope: affected users (share of all users), new pairs, mean risk
   5. Tier ── small ─────────────────────────────┐
           └─ large → wait for POST /appeals/{id}/confirm
   6. LLMs write a Rego rule (mixture of agents, majority vote)
@@ -127,7 +127,7 @@ risk  = 1 − p
 - The dot product is used (not cosine) because the model was trained with it.
 - **Threshold calibration:** the threshold is the risk below which a target share of the legitimate pairs in the
   validation data falls (`target_pass_rate`, default 0.99, i.e. about 1% false deny). The value is an operating
-  choice, not taken from Yin et al.: `scripts/evaluate_hgnn.py` prints false deny and detection on the test edges
+  choice, not taken from Yin et al.: `scripts/evaluate/evaluate_hgnn.py` prints false deny and detection on the test edges
   for 95%, 98%, 99%, 99.5% and 99.9%, and the target is picked from that table. The chosen threshold is stored
   in `metadata.json` (`risk_threshold`). Scores are deterministic, so a legitimate pair that is denied is denied
   every time and can be resolved once through an appeal.
@@ -208,17 +208,18 @@ Computed from the mined pattern, before the LLM runs.
 
 | Input | Source |
 |---|---|
-| Depth of the lowest common category covered by the pattern | Category tree |
-| Number of affected users and changed decisions | Replay of historical decisions |
+| Share of all users who get new access | Exact pairs the pattern opens |
+| Number of new (user, object) pairs | Exact pairs the pattern opens |
 | Mean risk score of the newly opened pairs | Use A |
-
-Example category tree: `root (0) → lecturer (1) → faculty (2) → program (3) → position (4)`.
-Closer to the root means more people are affected.
 
 | Tier | Condition (configurable) | Action |
 |---|---|---|
-| Small | depth ≥ `AUTO_APPLY_MIN_DEPTH` and users ≤ `AUTO_APPLY_MAX_USERS` and low mean risk | Applied automatically, logged |
+| Small | user share ≤ `AUTO_APPLY_MAX_USER_SHARE` (0.4) and pairs ≤ `AUTO_APPLY_MAX_PAIRS` (50) and mean risk ≤ `AUTO_APPLY_MAX_MEAN_RISK` (0.5) | Applied automatically, logged |
 | Large | anything else | Waits for admin confirmation |
+
+The first design also used the depth of the pattern in a category tree (closer to the root means
+more people). It was dropped: Amazon and the Xu & Stoller policies have no such tree, and the user
+share already measures how many people are affected. Kept as future work.
 
 Revoking a rule means deleting its file from `policies/generated/`; OPA reloads with `--watch`.
 
@@ -239,7 +240,10 @@ Revoking a rule means deleting its file from `policies/generated/`; OPA reloads 
 | Prompt injection into the LLM | LLM input is structured, sanitised data; output must pass the AST whitelist and equivalence check |
 | Over-generalisation | Smallest conjunction, scope count, depth tiers |
 | AI-generated rule is wrong | Equivalence check; risk score still denies suspicious pairs (demo 2) |
-| Non-admin calls `/appeals` | OPA checks the admin role before the request reaches AI-Corax |
+| Non-admin calls `/corax/appeals` | OPA allows `corax.*` actions only for `config.admin.users`; application rules and generated rules cannot grant them |
+| Someone reaches AI-Corax directly, bypassing Envoy and OPA | AI-Corax verifies the admin's JWT itself (same key, `iss`, `aud` and admin list as OPA, read from the same `data.json`; algorithm fixed by key type; `exp` and `sub` required) and is only exposed on the internal network |
+| Forged identity header (`x-corax-user`) | AI-Corax ignores it; the audit log takes the admin from the verified JWT |
+| A generated rule tries to make someone an admin or touch other policy | Generated files may only define `allow` in `app.generated` / `app.exceptions` (AST whitelist), and `corax.*` actions ignore those packages |
 
 ## 10. Evaluation
 

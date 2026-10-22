@@ -2,7 +2,7 @@ import json
 
 import appeal_scenarios
 import make_amazon_scenarios as amazon
-import make_mini_campus as campus
+import make_dummy as campus
 
 
 def test_write_and_load_round_trip(tmp_path):
@@ -138,7 +138,7 @@ def test_amazon_command_hides_the_rules(tmp_path):
         csv.writer(f).writerows([("id", "type"), *nodes])
     with (source / "edges.csv").open("w", newline="", encoding="utf-8") as f:
         csv.writer(f).writerows([("src", "relation", "dst"), *edges])
-    script = Path(__file__).parents[2] / "scripts" / "make_amazon_scenarios.py"
+    script = Path(__file__).parents[2] / "scripts" / "prepare" / "make_amazon_scenarios.py"
 
     completed = subprocess.run(
         [sys.executable, str(script), str(source), str(tmp_path / "out"),

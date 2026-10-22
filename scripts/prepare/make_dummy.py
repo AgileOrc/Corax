@@ -1,25 +1,25 @@
-"""Write a small synthetic campus graph (nodes.csv, edges.csv) for trying appeals locally.
+"""Write a small dummy campus graph (nodes.csv, edges.csv, scenarios.json) for testing appeals.
 
 Every program has one head of program, a few lecturers, students and courses. The current policy,
 recorded as "accessed" edges, is: a lecturer reads a student if they teach a course the student
 takes, or advise the student. There is no head-of-program rule yet, so an appeal by a head of
 program for a student of their own program should lead to that rule.
 
-scenarios.json (see appeal_scenarios.py) holds two appeals for scripts/evaluate_appeals.py:
+scenarios.json (see appeal_scenarios.py) holds two appeals for scripts/evaluate/evaluate_knn.py:
   head_of_program  the head of P0 asks for a P0 student; the hidden rule "head of program may read
                    students of their own program" should be found (its pairs: hidden/*.csv)
   one_off          a lecturer asks for a student of another program; nothing should generalise
 
-This is only for local experiments; the real data generator belongs to the demo repository.
+This is only for tests and local experiments; the real data generator belongs to the demo repository.
 
 Example:
-    python scripts/make_mini_campus.py output/mini-campus-data
-    python hgnn-job/run.py --data output/mini-campus-data --target-relation accessed \
-        --out output/mini-campus --learning-rate 0.01 --patience 50
-    python scripts/similar_cases.py --model-dir output/mini-campus \
+    python scripts/prepare/make_dummy.py output/dummy-data
+    python hgnn-job/run.py --data output/dummy-data --target-relation accessed \
+        --out output/dummy --learning-rate 0.01 --patience 50
+    python scripts/similar_cases.py --model-dir output/dummy \
         --user lecturer_head_P0 --object student_P0_05
-    python scripts/evaluate_appeals.py --model-dir output/mini-campus \
-        --scenarios output/mini-campus-data/scenarios.json
+    python scripts/evaluate/evaluate_knn.py --model-dir output/dummy \
+        --scenarios output/dummy-data/scenarios.json
 """
 
 import argparse
@@ -95,7 +95,7 @@ def build(programs: int, lecturers: int, students: int, courses: int, seed: int)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Write a small synthetic campus graph.")
+    parser = argparse.ArgumentParser(description="Write a small dummy campus graph for testing appeals.")
     parser.add_argument("out_dir", type=Path)
     parser.add_argument("--programs", type=int, default=6)
     parser.add_argument("--lecturers", type=int, default=4, help="per program, besides the head")

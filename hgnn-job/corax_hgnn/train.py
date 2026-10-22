@@ -26,7 +26,7 @@ class TrainConfig:
     max_epochs: int = 1000
     patience: int = 10
     val_ratio: float = 0.1
-    # Held-out edges for scripts/evaluate_hgnn.py, never used in training: 80 / 10 / 10 split.
+    # Held-out edges for scripts/evaluate/evaluate_hgnn.py, never used in training: 80 / 10 / 10 split.
     # 0 = no test split (all but the validation edges are used for training).
     test_ratio: float = 0.1
     negative_ratio: float = 2.0

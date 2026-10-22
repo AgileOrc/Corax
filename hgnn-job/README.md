@@ -18,7 +18,7 @@ From the repository root:
 
 ```bash
 python hgnn-job/run.py --data tests/hgnn/fixtures/toy_graph --target-relation accessed --out output/toy
-python scripts/evaluate_hgnn.py --model-dir output/toy
+python scripts/evaluate/evaluate_hgnn.py --model-dir output/toy
 ```
 
 Training runs once; `evaluate_hgnn.py` loads the saved model and scores it on the held-out test edges.
@@ -38,5 +38,5 @@ split; 0 = no test set), `--hard-negative-ratio 0` (0.5 worked best on Amazon), 
 | `history.csv` | `epoch,train_loss,val_loss` for the learning curve |
 | `graph.json` | Node id → relation → destination ids, without the target relation. Read by ai-corax and loaded by OPA as `data.corax.graph` |
 | `access.json` | User id → object ids of the target relation (access history). Read by ai-corax only, to skip pairs that already have access |
-| `model.pt` | Trained weights, for `scripts/evaluate_hgnn.py` |
-| `split.pt` | Held-out test edges and validation scores, for `scripts/evaluate_hgnn.py` |
+| `model.pt` | Trained weights, for `scripts/evaluate/evaluate_hgnn.py` |
+| `split.pt` | Held-out test edges and validation scores, for `scripts/evaluate/evaluate_hgnn.py` |

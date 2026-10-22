@@ -1,5 +1,10 @@
 # Source: https://www3.cs.stonybrook.edu/~stoller/software/
-# Command: python scripts/convert_xu_stoller.py datasets/xu-stoller/ABACMining/gen-case-studies/university/university-sets_10_1.abac output/xu-stoller/u10-1 --hide-rule 7
+# Converts a Xu & Stoller .abac policy into nodes.csv / edges.csv / scenarios.json with one rule hidden: the pairs only that
+# rule grants are left out of the access edges, and one of them is the appeal. Training is done by hgnn-job/run.py.
+#
+# One rule:  python scripts/prepare/convert_xu_stoller.py datasets/xu-stoller/ABACMining/gen-case-studies/university/university-sets_10_1.abac output/xu-stoller/university-sets_10_1/rule_07/data --hide-rule 7
+# All rules: python scripts/prepare/convert_xu_stoller.py datasets/xu-stoller/ABACMining/gen-case-studies/university/university-sets_10_1.abac output/xu-stoller/university-sets_10_1 --all-rules
+#            writes <out>/rule_NN/data for every rule that grants at least one pair on its own
 
 import argparse
 import csv
@@ -273,19 +278,40 @@ def write(out_dir: Path, policy: Policy, hidden_rule: int, seed: int = 0) -> dic
             "accessed": sum(e[1] == TARGET for e in edges), "nodes": len(nodes)}
 
 
+def write_all(out_dir: Path, policy: Policy, seed: int = 0) -> dict:
+    granted = {rule.index: permitted(policy, rule) for rule in policy.rules}
+    written = {}
+    for rule in policy.rules:
+        others = set().union(*(pairs for index, pairs in granted.items() if index != rule.index))
+        if not granted[rule.index] - others:
+            written[rule.index] = None
+            continue
+        written[rule.index] = write(out_dir / f"rule_{rule.index:02d}" / "data", policy, rule.index, seed)
+    return written
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Convert a Xu & Stoller .abac policy with one rule hidden.")
     parser.add_argument("source", type=Path, help=".abac file")
     parser.add_argument("out_dir", type=Path)
-    parser.add_argument("--hide-rule", type=int, required=True, help="1-based rule number to hide")
+    which = parser.add_mutually_exclusive_group(required=True)
+    which.add_argument("--hide-rule", type=int, help="1-based rule number to hide; writes out_dir itself")
+    which.add_argument("--all-rules", action="store_true", help="hide each rule in turn; writes out_dir/rule_NN/data")
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
 
     policy = parse(args.source.read_text(encoding="utf-8"))
+    print(f"{len(policy.users)} users, {len(policy.resources)} resources, {len(policy.rules)} rules")
+    if args.all_rules:
+        for index, summary in write_all(args.out_dir, policy, args.seed).items():
+            if summary is None:
+                print(f"rule {index:2}: skipped, no pair is granted by this rule alone")
+            else:
+                print(f"rule {index:2}: {summary['hidden']} hidden pairs -> {args.out_dir / f'rule_{index:02d}' / 'data'}")
+        return
     if not 1 <= args.hide_rule <= len(policy.rules):
         parser.error(f"--hide-rule must be between 1 and {len(policy.rules)}")
     summary = write(args.out_dir, policy, args.hide_rule, args.seed)
-    print(f"{len(policy.users)} users, {len(policy.resources)} resources, {len(policy.rules)} rules")
     print(f"hidden rule {args.hide_rule}: {summary['rule']}")
     print(f"{summary['hidden']} pairs only this rule grants; expressible as Corax predicates: {summary['expressible']}")
     print(f"{summary['nodes']} nodes, {summary['accessed']} accessed edges in {args.out_dir}")

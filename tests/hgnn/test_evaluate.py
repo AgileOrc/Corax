@@ -19,7 +19,7 @@ from corax_hgnn.graph import load_graph
 from corax_hgnn.train import TrainConfig, train
 
 TOY = Path(__file__).parent / "fixtures" / "toy_graph"
-SCRIPT = Path(__file__).parents[2] / "scripts" / "evaluate_hgnn.py"
+SCRIPT = Path(__file__).parents[2] / "scripts" / "evaluate" / "evaluate_hgnn.py"
 RUN = Path(__file__).parents[2] / "hgnn-job" / "run.py"
 FAST = TrainConfig(hidden=16, learning_rate=0.01, max_epochs=50, patience=5, test_ratio=0.2)
 

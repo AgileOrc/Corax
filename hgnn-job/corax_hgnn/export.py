@@ -8,7 +8,7 @@
 #                      read by ai-corax (pattern miner) and by OPA as data.corax.graph
 #     access.json      user id -> sorted object ids of the target relation (access history);
 #                      read by ai-corax only, to skip pairs that already have access
-#     model.pt         trained weights, so scripts/evaluate_hgnn.py can evaluate without training
+#     model.pt         trained weights, so scripts/evaluate/evaluate_hgnn.py can evaluate without training
 #     split.pt         held-out test edges and the validation scores, for the same evaluation
 
 import csv

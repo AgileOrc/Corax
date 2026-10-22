@@ -13,10 +13,10 @@ with their title uses) check that nothing is generalised from them.
 These rules are inferred from the data, not taken from Amazon's real policy.
 
 Example:
-    python scripts/make_amazon_scenarios.py datasets/amazon-graph datasets/amazon-appeals
+    python scripts/prepare/make_amazon_scenarios.py datasets/amazon-graph datasets/amazon-appeals
     python hgnn-job/run.py --data datasets/amazon-appeals \
         --target-relation has_potential_access --out output/amazon-appeals
-    python scripts/evaluate_appeals.py --model-dir output/amazon-appeals \
+    python scripts/evaluate/evaluate_knn.py --model-dir output/amazon-appeals \
         --scenarios datasets/amazon-appeals/scenarios.json
 """
 

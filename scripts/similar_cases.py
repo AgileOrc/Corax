@@ -6,7 +6,7 @@ the exception, and the validation result. Nothing is written.
 Example:
     python scripts/similar_cases.py --model-dir output/toy \
         --user lecturer_budi --object student_candra
-    python scripts/similar_cases.py --model-dir output/mini-campus \
+    python scripts/similar_cases.py --model-dir output/dummy \
         --user lecturer_head_P0 --object student_P0_05 --pick 3 --opa ../opa.exe
 """
 
@@ -21,7 +21,7 @@ from patterns import candidates, opened_pairs
 from risk import RiskModel
 from rules import render_exception, render_rule
 from similar import SimilarityIndex
-from tier import assess
+from tier import TierLimits, assess
 from validate import expected_decisions, validate
 
 
@@ -37,6 +37,9 @@ def main() -> None:
     parser.add_argument("--object-identity", action="store_true", help="allow object_is (Amazon)")
     parser.add_argument("--pick", type=int, help="show tier, Rego and validation for candidate N")
     parser.add_argument("--action", default="read", help="action the appeal is about")
+    parser.add_argument("--max-user-share", type=float, default=TierLimits.max_user_share, help="share of all users above which a rule is large")
+    parser.add_argument("--max-pairs", type=int, default=TierLimits.max_pairs, help="opened pairs above which a rule is large")
+    parser.add_argument("--max-mean-risk", type=float, default=TierLimits.max_mean_risk, help="mean risk above which a rule is large")
     parser.add_argument("--opa", default="opa", help="opa binary for validation")
     parser.add_argument("--policy-dir", help="application policy folder for `opa test`")
     args = parser.parse_args()
@@ -83,10 +86,10 @@ def show_pick(args, model, graph, index, chosen) -> None:
     opened = opened_pairs(
         graph.structure, graph.access, appeal, index.user_ids, index.object_ids, chosen.predicates
     )
-    scope = assess(opened, model)
+    scope = assess(opened, model, TierLimits(args.max_user_share, args.max_pairs, args.max_mean_risk))
     mean_risk = "-" if scope.mean_risk is None else f"{scope.mean_risk:.2f}"
     print(f"\npick #{args.pick}: {chosen.text()}")
-    print(f"tier {scope.tier}: {scope.users} users, {scope.pairs} pairs, mean risk {mean_risk}")
+    print(f"tier {scope.tier}: {scope.users} users ({scope.user_share:.0%} of all), {scope.pairs} pairs, mean risk {mean_risk}")
     for reason in scope.reasons:
         print(f"  needs acknowledgement: {reason}")
 

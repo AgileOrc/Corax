@@ -1,4 +1,4 @@
-# Command: python scripts/evaluate_hgnn.py --model-dir output/hgnn
+# Command: python scripts/evaluate/evaluate_hgnn.py --model-dir output/hgnn
 
 import argparse
 import json
@@ -8,7 +8,7 @@ import warnings
 from pathlib import Path
 
 warnings.filterwarnings("ignore", message="`torch.jit.script` is deprecated")
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hgnn-job"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "hgnn-job"))
 
 from corax_hgnn.evaluate import evaluate
 from corax_hgnn.export import load_trained
