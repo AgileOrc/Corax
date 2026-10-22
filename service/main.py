@@ -10,7 +10,7 @@ from graph import GraphData
 from pydantic import BaseModel, Field
 from risk import RiskModel
 
-log = logging.getLogger("ai_corax")
+log = logging.getLogger("corax.service")
 
 class RiskRequest(BaseModel):
     user: str = Field(min_length=1, max_length=256)
@@ -53,7 +53,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             log.warning("no graph.json in %s: appeals are disabled", settings.model_dir)
         yield
 
-    app = FastAPI(title="ai-corax", lifespan=lifespan)
+    app = FastAPI(title="corax-service", lifespan=lifespan)
 
     app.state.auth = AdminAuth(settings.corax_config)
 

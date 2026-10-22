@@ -5,7 +5,7 @@ Every dataset follows the same flow:
 ```
 prepare/   dataset → nodes.csv, edges.csv, scenarios.json, hidden/*.csv   (format: docs/data-format.md)
    │
-hgnn-job/run.py   trains the HGNN once and saves the model folder           (the only place that trains)
+python -m hgnn   trains the HGNN once and saves the model folder           (the only place that trains)
    │
 evaluate/  loads the saved model, never trains
 ```
@@ -26,7 +26,7 @@ evaluate/  loads the saved model, never trains
 
 ```bash
 python scripts/prepare/make_dummy.py output/dummy-data
-python hgnn-job/run.py --data output/dummy-data --target-relation accessed --out output/dummy --learning-rate 0.01 --patience 50
+python -m hgnn --data output/dummy-data --target-relation accessed --out output/dummy --learning-rate 0.01 --patience 50
 python scripts/evaluate/evaluate_knn.py --model-dir output/dummy --scenarios output/dummy-data/scenarios.json
 python scripts/similar_cases.py --model-dir output/dummy --user lecturer_head_P0 --object student_P0_05
 ```
@@ -49,7 +49,7 @@ among the first few.
 3. Risk score: train once (80/10/10), then evaluate the saved model:
 
    ```bash
-   python hgnn-job/run.py --data datasets/amazon-graph --target-relation has_potential_access --hard-negative-ratio 0.5 --out output/exp-hard50
+   python -m hgnn --data datasets/amazon-graph --target-relation has_potential_access --hard-negative-ratio 0.5 --out output/exp-hard50
    python scripts/evaluate/evaluate_hgnn.py --model-dir output/exp-hard50
    ```
 
@@ -58,7 +58,7 @@ among the first few.
 
    ```bash
    python scripts/prepare/make_amazon_scenarios.py datasets/amazon-graph datasets/amazon-appeals
-   python hgnn-job/run.py --data datasets/amazon-appeals --target-relation has_potential_access --out output/amazon-appeals
+   python -m hgnn --data datasets/amazon-appeals --target-relation has_potential_access --out output/amazon-appeals
    python scripts/evaluate/evaluate_knn.py --model-dir output/amazon-appeals --scenarios datasets/amazon-appeals/scenarios.json
    ```
 
@@ -79,7 +79,7 @@ grants all its pairs.
 # 1. prepare: output/xu-stoller/<file>/rule_NN/data
 for f in datasets/xu-stoller/ABACMining/gen-case-studies/university/university-sets_10_*.abac; do python scripts/prepare/convert_xu_stoller.py "$f" "output/xu-stoller/$(basename "$f" .abac)" --all-rules; done
 # 2. train each once: output/xu-stoller/<file>/rule_NN/model (about 5 seconds each)
-for d in output/xu-stoller/*/rule_*; do python hgnn-job/run.py --data "$d/data" --target-relation accessed --out "$d/model" --learning-rate 0.01 --patience 50 --test-ratio 0; done
+for d in output/xu-stoller/*/rule_*; do python -m hgnn --data "$d/data" --target-relation accessed --out "$d/model" --learning-rate 0.01 --patience 50 --test-ratio 0; done
 # 3. evaluate the saved models (no training)
 python scripts/evaluate/evaluate_knn.py --runs "output/xu-stoller/*/rule_*" --out output/xu-stoller/results.json
 ```

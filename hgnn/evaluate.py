@@ -3,10 +3,10 @@ import random
 import torch
 from torch import Tensor
 
-from corax_hgnn.graph import Graph
-from corax_hgnn.model import HGNN, link_probability
-from corax_hgnn.peers import PeerIndex
-from corax_hgnn.train import roc_auc
+from hgnn.graph import Graph
+from hgnn.model import HGNN, link_probability
+from hgnn.peers import PeerIndex
+from hgnn.train import roc_auc
 
 RISK_THRESHOLDS = (0.3, 0.5, 0.7, 0.9)
 # deny when fewer than this share of the user's peers have the object

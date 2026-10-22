@@ -37,7 +37,7 @@ class RiskModel:
             if "risk_threshold" not in metadata:
                 raise ValueError(
                     f"{model_dir / 'metadata.json'} has no risk_threshold; "
-                    "re-export with hgnn-job or set AI_RISK_THRESHOLD"
+                    "retrain with python -m hgnn or set AI_RISK_THRESHOLD"
                 )
             threshold = metadata["risk_threshold"]["value"]
 

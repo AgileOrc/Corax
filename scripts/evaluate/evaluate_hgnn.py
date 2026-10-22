@@ -8,17 +8,17 @@ import warnings
 from pathlib import Path
 
 warnings.filterwarnings("ignore", message="`torch.jit.script` is deprecated")
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "hgnn-job"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from corax_hgnn.evaluate import evaluate
-from corax_hgnn.export import load_trained
+from hgnn.evaluate import evaluate
+from hgnn.export import load_trained
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Evaluate a trained HGNN on its held-out test edges (no training)."
     )
-    parser.add_argument("--model-dir", required=True, type=Path, help="folder written by run.py")
+    parser.add_argument("--model-dir", required=True, type=Path, help="folder written by python -m hgnn")
     parser.add_argument("--data", help="data folder, if it moved since training")
     return parser.parse_args()
 

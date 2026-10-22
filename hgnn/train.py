@@ -11,9 +11,9 @@ from torch import Tensor
 from torch_geometric.data import HeteroData
 from torch_geometric.utils import negative_sampling
 
-from corax_hgnn.graph import Graph
-from corax_hgnn.model import HGNN, link_logits
-from corax_hgnn.peers import PeerIndex
+from hgnn.graph import Graph
+from hgnn.model import HGNN, link_logits
+from hgnn.peers import PeerIndex
 
 log = logging.getLogger(__name__)
 

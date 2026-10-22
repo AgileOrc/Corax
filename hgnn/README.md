@@ -1,14 +1,14 @@
-# hgnn-job
+# hgnn
 
 Trains the heterogeneous GraphSAGE model (reimplementation of Yin et al. 2024) and exports one embedding per node.
 
 | File | Does |
 |---|---|
-| `corax_hgnn/graph.py` | Loads `nodes.csv` / `edges.csv` into a PyTorch Geometric `HeteroData` |
-| `corax_hgnn/model.py` | Learnable node embeddings, 2 × SAGEConv + ReLU, `to_hetero`, dot-product decoder |
-| `corax_hgnn/train.py` | Link prediction training with early stopping, validation AUC |
-| `corax_hgnn/export.py` | Saves and loads embeddings and training metadata |
-| `run.py` | Command-line entry point |
+| `graph.py` | Loads `nodes.csv` / `edges.csv` into a PyTorch Geometric `HeteroData` |
+| `model.py` | Learnable node embeddings, 2 × SAGEConv + ReLU, `to_hetero`, dot-product decoder |
+| `train.py` | Link prediction training with early stopping, validation AUC |
+| `export.py` | Saves and loads embeddings and training metadata |
+| `__main__.py` | Command-line entry point: `python -m hgnn` |
 
 Input format: [docs/data-format.md](../docs/data-format.md).
 
@@ -17,7 +17,7 @@ Input format: [docs/data-format.md](../docs/data-format.md).
 From the repository root:
 
 ```bash
-python hgnn-job/run.py --data tests/hgnn/fixtures/toy_graph --target-relation accessed --out output/toy
+python -m hgnn --data tests/hgnn/fixtures/toy_graph --target-relation accessed --out output/toy
 python scripts/evaluate/evaluate_hgnn.py --model-dir output/toy
 ```
 
@@ -36,7 +36,7 @@ split; 0 = no test set), `--hard-negative-ratio 0` (0.5 worked best on Amazon), 
 | `node_ids.json` | Node type → list of node ids |
 | `metadata.json` | Settings, data size, best epoch, validation loss and AUC, calibrated `risk_threshold`, library versions |
 | `history.csv` | `epoch,train_loss,val_loss` for the learning curve |
-| `graph.json` | Node id → relation → destination ids, without the target relation. Read by ai-corax and loaded by OPA as `data.corax.graph` |
-| `access.json` | User id → object ids of the target relation (access history). Read by ai-corax only, to skip pairs that already have access |
+| `graph.json` | Node id → relation → destination ids, without the target relation. Read by corax-service and loaded by OPA as `data.corax.graph` |
+| `access.json` | User id → object ids of the target relation (access history). Read by corax-service only, to skip pairs that already have access |
 | `model.pt` | Trained weights, for `scripts/evaluate/evaluate_hgnn.py` |
 | `split.pt` | Held-out test edges and validation scores, for `scripts/evaluate/evaluate_hgnn.py` |

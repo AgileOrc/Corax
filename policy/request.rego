@@ -55,7 +55,7 @@ route_matches(path) if {
 	}
 }
 
-# Corax's own admin routes (served by ai-corax); applications do not list them in config.routes.
+# Corax's own admin routes (served by corax-service); applications do not list them in config.routes.
 corax_routes := [
 	{"method": "POST", "path": "/corax/appeals", "action": "corax.appeal.create", "resource_type": "appeal"},
 	{"method": "GET", "path": "/corax/appeals/:id", "action": "corax.appeal.read", "resource_type": "appeal"},

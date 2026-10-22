@@ -9,7 +9,7 @@
 # because the admin already reviewed it. All of them see the normalised request from request.rego.
 #
 # The AI risk check runs only after the policy allowed the request, so it can only turn an allow
-# into a deny. If ai-corax errors or times out, the policy decision stands.
+# into a deny. If corax-service errors or times out, the policy decision stands.
 #
 # Entry points:
 #   allow    boolean
@@ -102,7 +102,7 @@ default risk_metadata := {}
 
 risk_metadata := {"corax_risk": ai_risk}
 
-# The verified user id is passed to the upstream service (ai-corax uses it for the appeal audit log).
+# The verified user id is passed to the upstream service (corax-service uses it for the appeal audit log).
 default headers := {}
 
 headers := {"x-corax-user": user_id} if allow

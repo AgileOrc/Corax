@@ -4,7 +4,8 @@ from pathlib import Path
 
 import pytest
 import torch
-from corax_hgnn.evaluate import (
+
+from hgnn.evaluate import (
     PASS_RATES,
     calibrate,
     calibrate_threshold,
@@ -14,13 +15,13 @@ from corax_hgnn.evaluate import (
     sample_hard_negatives,
     threshold_table,
 )
-from corax_hgnn.export import load_trained, save
-from corax_hgnn.graph import load_graph
-from corax_hgnn.train import TrainConfig, train
+from hgnn.export import load_trained, save
+from hgnn.graph import load_graph
+from hgnn.train import TrainConfig, train
 
 TOY = Path(__file__).parent / "fixtures" / "toy_graph"
-SCRIPT = Path(__file__).parents[2] / "scripts" / "evaluate" / "evaluate_hgnn.py"
-RUN = Path(__file__).parents[2] / "hgnn-job" / "run.py"
+ROOT = Path(__file__).parents[2]
+SCRIPT = ROOT / "scripts" / "evaluate" / "evaluate_hgnn.py"
 FAST = TrainConfig(hidden=16, learning_rate=0.01, max_epochs=50, patience=5, test_ratio=0.2)
 
 LABELS = torch.tensor([1.0, 1.0, 1.0, 0.0, 0.0, 0.0])
@@ -152,12 +153,12 @@ def test_saved_model_gives_the_same_evaluation(graph, tmp_path):
 
 def run(*args):
     return subprocess.run(
-        [sys.executable, *map(str, args)], capture_output=True, text=True, check=False
+        [sys.executable, *map(str, args)], capture_output=True, text=True, check=False, cwd=ROOT
     )
 
 
 def test_command_line_evaluates_without_training(tmp_path):
-    trained = run(RUN, "--data", TOY, "--target-relation", "accessed", "--out", tmp_path,
+    trained = run("-m", "hgnn", "--data", TOY, "--target-relation", "accessed", "--out", tmp_path,
                   "--test-ratio", "0.2", "--hidden", "8", "--max-epochs", "5")
     assert trained.returncode == 0, trained.stderr
 
@@ -171,7 +172,7 @@ def test_command_line_evaluates_without_training(tmp_path):
 
 
 def test_command_line_refuses_a_model_without_test_split(tmp_path):
-    trained = run(RUN, "--data", TOY, "--target-relation", "accessed", "--out", tmp_path,
+    trained = run("-m", "hgnn", "--data", TOY, "--target-relation", "accessed", "--out", tmp_path,
                   "--test-ratio", "0", "--hidden", "8", "--max-epochs", "3")
     assert trained.returncode == 0, trained.stderr
 

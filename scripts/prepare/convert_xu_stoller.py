@@ -1,6 +1,6 @@
 # Source: https://www3.cs.stonybrook.edu/~stoller/software/
 # Converts a Xu & Stoller .abac policy into nodes.csv / edges.csv / scenarios.json with one rule hidden: the pairs only that
-# rule grants are left out of the access edges, and one of them is the appeal. Training is done by hgnn-job/run.py.
+# rule grants are left out of the access edges, and one of them is the appeal. Training is done by python -m hgnn.
 #
 # One rule:  python scripts/prepare/convert_xu_stoller.py datasets/xu-stoller/ABACMining/gen-case-studies/university/university-sets_10_1.abac output/xu-stoller/university-sets_10_1/rule_07/data --hide-rule 7
 # All rules: python scripts/prepare/convert_xu_stoller.py datasets/xu-stoller/ABACMining/gen-case-studies/university/university-sets_10_1.abac output/xu-stoller/university-sets_10_1 --all-rules

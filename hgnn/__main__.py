@@ -1,4 +1,4 @@
-# Command: python hgnn-job/run.py --data tests/hgnn/fixtures/toy_graph --target-relation accessed
+# Command: python -m hgnn --data tests/hgnn/fixtures/toy_graph --target-relation accessed
 
 import argparse
 import json
@@ -7,9 +7,9 @@ import warnings
 
 warnings.filterwarnings("ignore", message="`torch.jit.script` is deprecated")
 
-from corax_hgnn.export import save, save_graph
-from corax_hgnn.graph import load_graph
-from corax_hgnn.train import TrainConfig, train
+from hgnn.export import save, save_graph
+from hgnn.graph import load_graph
+from hgnn.train import TrainConfig, train
 
 
 def parse_args() -> argparse.Namespace:

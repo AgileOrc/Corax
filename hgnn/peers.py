@@ -4,7 +4,7 @@ from collections import defaultdict
 import torch
 from torch import Tensor
 
-from corax_hgnn.graph import Graph
+from hgnn.graph import Graph
 
 
 class PeerIndex:

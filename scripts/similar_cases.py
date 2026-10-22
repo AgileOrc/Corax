@@ -14,7 +14,7 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "ai-corax"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "service"))
 
 from graph import GraphData
 from patterns import candidates, opened_pairs
@@ -27,7 +27,7 @@ from validate import expected_decisions, validate
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Show similar cases and candidate patterns.")
-    parser.add_argument("--model-dir", required=True, help="folder written by hgnn-job")
+    parser.add_argument("--model-dir", required=True, help="folder written by python -m hgnn")
     parser.add_argument("--user", required=True)
     parser.add_argument("--object", required=True)
     parser.add_argument("-k", type=int, default=10)

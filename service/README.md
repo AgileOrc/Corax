@@ -1,6 +1,6 @@
-# ai-corax
+# service
 
-FastAPI service called by OPA and by admins. It reads the folder written by `hgnn-job`
+FastAPI service called by OPA and by admins. It reads the folder written by `hgnn`
 (`embeddings.npz`, `node_ids.json`, `metadata.json`) and does not need torch.
 
 | Endpoint | Caller | Does | Status |
@@ -16,13 +16,13 @@ See [docs/ai-design.md](../docs/ai-design.md), sections 2, 4–7.
 ## Run
 
 ```
-pip install -r ai-corax/requirements.txt
-CORAX_MODEL_DIR=output/exp-hard50 uvicorn main:app --app-dir ai-corax --port 8000
+pip install -r service/requirements.txt
+CORAX_MODEL_DIR=output/exp-hard50 uvicorn main:app --app-dir service --port 8000
 ```
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `CORAX_MODEL_DIR` | `output/hgnn` | Folder written by `hgnn-job` |
+| `CORAX_MODEL_DIR` | `output/hgnn` | Folder written by `hgnn` |
 | `AI_RISK_THRESHOLD` | `risk_threshold.value` in `metadata.json` | Optional override |
 | `GENERATED_DIR` | `policies/generated` | Where validated Rego files are written (OPA loads it with `--watch`) |
 | `APPEALS_DIR` | `appeals` | One JSON record per appeal, with its history |
@@ -79,8 +79,8 @@ POST /corax/appeals/appeal-0001/confirm   {"candidate": null}
 
 ## Admin authentication
 
-Every appeal endpoint needs `Authorization: Bearer <JWT>` of an admin. ai-corax checks it itself,
-even though OPA already did, so calling ai-corax directly does not bypass the check:
+Every appeal endpoint needs `Authorization: Bearer <JWT>` of an admin. corax-service checks it itself,
+even though OPA already did, so calling corax-service directly does not bypass the check:
 
 | Check | Result |
 |---|---|
@@ -91,6 +91,6 @@ even though OPA already did, so calling ai-corax directly does not bypass the ch
 - Key, issuer, audience and admin list come from the same `data.json` as OPA, re-read when the
   file changes, so both always agree.
 - `secret` allows only HS256; `cert` (a PEM public key) allows only RS256 / ES256. With a public
-  key ai-corax can verify tokens but never create them.
+  key corax-service can verify tokens but never create them.
 - The `x-corax-user` header is ignored; the audit log records the `sub` of the verified token.
 - `/risk` has no authentication and must stay on the internal network, reachable only by OPA.

@@ -1,5 +1,5 @@
 # Scores the appeal pipeline (kNN similar cases + candidate patterns + tier) on scenarios with known answers.
-# It only loads models trained by hgnn-job/run.py; it never trains.
+# It only loads models trained by python -m hgnn; it never trains.
 #
 # Per scenario with a hidden rule:
 #   P@k            share of the k similar cases that belong to the hidden rule
@@ -12,7 +12,7 @@
 #
 # One model:   python scripts/evaluate/evaluate_knn.py --model-dir output/amazon-appeals --scenarios datasets/amazon-appeals/scenarios.json
 # Many models: python scripts/evaluate/evaluate_knn.py --runs "output/xu-stoller/*/rule_*"
-#              (each run folder holds model/ from run.py and data/scenarios.json from a prepare script)
+#              (each run folder holds model/ from python -m hgnn and data/scenarios.json from a prepare script)
 
 import argparse
 import glob
@@ -22,7 +22,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path[:0] = [str(ROOT / "ai-corax"), str(ROOT / "scripts" / "prepare")]
+sys.path[:0] = [str(ROOT / "service"), str(ROOT / "scripts" / "prepare")]
 
 import appeal_scenarios
 from graph import GraphData
@@ -190,7 +190,7 @@ def print_report(results: list[Result], k: int) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Score kNN similar cases and candidate patterns on saved models (no training).")
     source = parser.add_mutually_exclusive_group(required=True)
-    source.add_argument("--model-dir", type=Path, help="folder written by hgnn-job/run.py (needs --scenarios)")
+    source.add_argument("--model-dir", type=Path, help="folder written by python -m hgnn (needs --scenarios)")
     source.add_argument("--runs", help="glob of run folders, each with model/ and data/scenarios.json")
     parser.add_argument("--scenarios", type=Path, help="scenarios.json for --model-dir")
     parser.add_argument("-k", type=int, default=10)

@@ -5,12 +5,13 @@ from pathlib import Path
 
 import pytest
 import torch
-from corax_hgnn.export import load, load_trained, save, save_graph
-from corax_hgnn.graph import load_graph
-from corax_hgnn.train import TrainConfig, train
+
+from hgnn.export import load, load_trained, save, save_graph
+from hgnn.graph import load_graph
+from hgnn.train import TrainConfig, train
 
 TOY = Path(__file__).parent / "fixtures" / "toy_graph"
-RUN = Path(__file__).parents[2] / "hgnn-job" / "run.py"
+ROOT = Path(__file__).parents[2]
 FAST = TrainConfig(hidden=16, learning_rate=0.01, max_epochs=50, patience=5, seed=0)
 
 
@@ -135,7 +136,8 @@ def test_command_line_runs_end_to_end(tmp_path):
     completed = subprocess.run(
         [
             sys.executable,
-            str(RUN),
+            "-m",
+            "hgnn",
             "--data", str(TOY),
             "--target-relation", "accessed",
             "--out", str(tmp_path),
@@ -145,6 +147,7 @@ def test_command_line_runs_end_to_end(tmp_path):
         capture_output=True,
         text=True,
         check=False,
+        cwd=ROOT,
     )
 
     assert completed.returncode == 0, completed.stderr

@@ -58,14 +58,14 @@ def test_command_line_on_the_dummy_campus_does_not_train(tmp_path):
 
     def run(*args):
         completed = subprocess.run(
-            [sys.executable, *map(str, args)], capture_output=True, text=True, check=False
+            [sys.executable, *map(str, args)], capture_output=True, text=True, check=False, cwd=ROOT
         )
         assert completed.returncode == 0, completed.stderr
         return completed.stdout
 
     run(ROOT / "scripts/prepare/make_dummy.py", data, "--programs", "3", "--students", "8")
     run(
-        ROOT / "hgnn-job/run.py", "--data", data, "--target-relation", "accessed",
+        "-m", "hgnn", "--data", data, "--target-relation", "accessed",
         "--out", model, "--hidden", "16", "--max-epochs", "20",
     )
     saved = {f.name: f.stat().st_mtime_ns for f in model.iterdir()}

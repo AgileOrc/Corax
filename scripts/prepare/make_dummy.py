@@ -14,7 +14,7 @@ This is only for tests and local experiments; the real data generator belongs to
 
 Example:
     python scripts/prepare/make_dummy.py output/dummy-data
-    python hgnn-job/run.py --data output/dummy-data --target-relation accessed \
+    python -m hgnn --data output/dummy-data --target-relation accessed \
         --out output/dummy --learning-rate 0.01 --patience 50
     python scripts/similar_cases.py --model-dir output/dummy \
         --user lecturer_head_P0 --object student_P0_05

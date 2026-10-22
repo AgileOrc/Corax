@@ -5,9 +5,9 @@
 #                      calibrated risk threshold ("risk_threshold")
 #     history.csv      epoch, train_loss, val_loss (for the learning curve)
 #     graph.json       node id -> relation -> sorted destination ids, without the target relation;
-#                      read by ai-corax (pattern miner) and by OPA as data.corax.graph
+#                      read by the service (pattern miner) and by OPA as data.corax.graph
 #     access.json      user id -> sorted object ids of the target relation (access history);
-#                      read by ai-corax only, to skip pairs that already have access
+#                      read by the service only, to skip pairs that already have access
 #     model.pt         trained weights, so scripts/evaluate/evaluate_hgnn.py can evaluate without training
 #     split.pt         held-out test edges and the validation scores, for the same evaluation
 
@@ -22,10 +22,10 @@ import numpy as np
 import torch
 import torch_geometric
 
-from corax_hgnn.evaluate import calibrate
-from corax_hgnn.graph import Graph, load_graph, read_rows
-from corax_hgnn.model import HGNN
-from corax_hgnn.train import TrainConfig, TrainResult
+from hgnn.evaluate import calibrate
+from hgnn.graph import Graph, load_graph, read_rows
+from hgnn.model import HGNN
+from hgnn.train import TrainConfig, TrainResult
 
 
 def save(

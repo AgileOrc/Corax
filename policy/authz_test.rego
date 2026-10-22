@@ -17,7 +17,7 @@ fixture_config := {
 		},
 		{"method": "GET", "path": "/students/:id", "action": "read_personal_data", "resource_type": "student"},
 	],
-	"ai": {"url": "http://ai-corax.test", "timeout": "20ms"},
+	"ai": {"url": "http://corax-service.test", "timeout": "20ms"},
 	"admin": {"users": ["alice"]},
 }
 
@@ -40,7 +40,7 @@ envoy_input(method, path, authorization) := {"attributes": {"request": {"http": 
 # Alice, with a valid token, reads Bob's grades for IF201.
 read_grades := envoy_input("GET", "/students/bob/grades/IF201", concat(" ", ["Bearer", sign(valid_claims, secret)]))
 
-# ai-corax mocks
+# corax-service mocks
 risk_low(_) := {"status_code": 200, "body": {"risk": 0.1, "high_risk": false}}
 
 risk_high(_) := {"status_code": 200, "body": {"risk": 0.99, "high_risk": true}}
@@ -256,7 +256,7 @@ test_ai_request_uses_token_user_and_path_resource if {
 
 expect_alice_bob(req) := {"status_code": 200, "body": {"risk": 0.1, "high_risk": false}} if {
 	req.method == "POST"
-	req.url == "http://ai-corax.test/risk"
+	req.url == "http://corax-service.test/risk"
 	req.body == {"user": "alice", "object": "bob"}
 }
 

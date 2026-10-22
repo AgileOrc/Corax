@@ -82,8 +82,8 @@ The full AI design, including how it maps to the papers below, is in [docs/ai-de
 | `demo-api` | Python, FastAPI | Deliberately BOLA-vulnerable campus API |
 | `sidecar` | Envoy (`ext_authz`) | One per service |
 | `policy-engine` | OPA with `opa-envoy-plugin` (Rego) | JWT check, path parsing, policy; loads `policies/` with `--watch` |
-| `ai-corax` | Python, FastAPI | `/risk` (per-request risk score) and `/appeals` (similar cases → new rule) |
-| `hgnn-job` | PyTorch Geometric (heterogeneous GraphSAGE) | Recomputes embeddings periodically and writes them to a folder that `ai-corax` reads; reimplemented from Yin et al. 2024 |
+| `corax-service` | Python, FastAPI | `/risk` (per-request risk score) and `/appeals` (similar cases → new rule) |
+| `hgnn` | PyTorch Geometric (heterogeneous GraphSAGE) | Recomputes embeddings periodically and writes them to a folder that `corax-service` reads; reimplemented from Yin et al. 2024 |
 | `llm` | Ollama (local models) | Writes Rego rules from mined patterns; reimplements Mai et al. 2025 |
 | `data-generator` | Python, Faker | Synthetic users, relations, category tree, labelled access logs |
 
@@ -118,7 +118,7 @@ The demo API is exposed through the sidecar at `http://localhost:8080`.
 | Variable | Default | Meaning |
 |---|---|---|
 | `POLICY_ENGINE_URL` | `http://policy-engine:8181` | OPA endpoint |
-| `CORAX_MODEL_DIR` | `output/hgnn` | Folder written by `hgnn-job` (embeddings, node ids, metadata) |
+| `CORAX_MODEL_DIR` | `output/hgnn` | Folder written by `hgnn` (embeddings, node ids, metadata) |
 | `AI_RISK_THRESHOLD` | from `metadata.json` | Optional override; above this, a policy-allowed request is denied |
 | `AI_TIMEOUT_MS` | `20` | Max time for the AI check |
 | `AI_ON_ERROR` | `follow_policy` | What to do if the model fails |
@@ -134,8 +134,8 @@ The demo API is exposed through the sidecar at `http://localhost:8080`.
 
 ```
 .
-├── hgnn-job/          # trains the HGNN, exports embeddings
-├── ai-corax/          # /risk and /appeals service
+├── hgnn/              # trains the HGNN, exports embeddings
+├── service/           # /risk and /appeals service
 ├── policy/            # generic Rego framework (JWT, risk call, deny-only rule)
 ├── deploy/            # envoy.yaml, docker-compose.yml
 ├── scripts/           # helpers, e.g. dataset converters

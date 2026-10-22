@@ -1,7 +1,8 @@
 from pathlib import Path
 
 import pytest
-from corax_hgnn.graph import load_graph
+
+from hgnn.graph import load_graph
 
 TOY = Path(__file__).parent / "fixtures" / "toy_graph"
 
