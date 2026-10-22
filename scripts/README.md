@@ -13,6 +13,8 @@ Helper scripts.
 | `make_amazon_scenarios.py` | Hides inferred role-based rules (title → resource) in the Amazon graph, for evaluating appeals |
 | `evaluate_appeals.py` | Scores kNN and candidate patterns on `scenarios.json` (precision@k, rank of the expected rule) |
 | `appeal_scenarios.py` | Reads and writes `scenarios.json` (used by the scripts above) |
+| `convert_xu_stoller.py` | Converts a Xu & Stoller ABAC policy (`.abac`) into the graph format with one rule hidden, plus its `scenarios.json` |
+| `evaluate_xu_stoller.py` | Leave-one-rule-out appeal evaluation on Xu & Stoller policies (convert, train, similar cases, candidates) |
 
 ## Mini campus (appeals)
 
@@ -28,6 +30,26 @@ among the first few. To score it:
 ```bash
 python scripts/evaluate_appeals.py --model-dir output/mini-campus --scenarios output/mini-campus-data/scenarios.json
 ```
+
+## Appeals on the Xu & Stoller ABAC policies
+
+Standard policy mining benchmark from Z. Xu and S. D. Stoller, "Mining Attribute-Based Access Control
+Policies", IEEE TDSC 12(5), 2015. Download `ABAC-Mining.zip` from Stoller's
+[software page](https://www3.cs.stonybrook.edu/~stoller/software/) into `datasets/xu-stoller/` and
+extract the `.abac` files there. The archive is GPL-3.0: keep it under `datasets/` (git-ignored); the
+scripts here only read the format.
+
+For each rule, the pairs only that rule grants are removed from the access edges, the HGNN is trained on
+the rest, one hidden pair is appealed, and the candidates are checked: `rank` is the first candidate that
+opens exactly the hidden pairs. Candidates use up to 3 predicates and `object has ...` (the resource type
+matters in every rule). Rule 3 of the university policy is skipped: rule 2 already grants all its pairs.
+
+```bash
+python scripts/evaluate_xu_stoller.py --files "datasets/xu-stoller/ABACMining/gen-case-studies/university/university-sets_10_*.abac"
+```
+
+About 7 seconds per rule on the largest university instances (330 users, 630 resources). The
+`ir-gen-case-studies` folder holds the same policies with irrelevant attributes added, for a noise test.
 
 ## Appeals on the Amazon data
 

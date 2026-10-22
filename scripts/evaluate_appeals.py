@@ -79,6 +79,8 @@ def evaluate(model_dir: Path, scenario_file: Path, k: int, max_per_user: int | N
             index.object_ids,
             neighbours=neighbours,
             object_identity=scenario_set.object_identity,
+            object_values=scenario_set.object_values,
+            max_size=scenario_set.max_size,
         )
         hidden = s.hidden - {s.appeal}
         top = found[0] if found else None

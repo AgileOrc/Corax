@@ -39,9 +39,18 @@ class ScenarioSet:
     target_relation: str
     object_identity: bool
     scenarios: tuple[Scenario, ...]
+    object_values: bool = False
+    max_size: int = 2
 
 
-def write(out_dir: Path, target_relation: str, object_identity: bool, scenarios: list[dict]):
+def write(
+    out_dir: Path,
+    target_relation: str,
+    object_identity: bool,
+    scenarios: list[dict],
+    object_values: bool = False,
+    max_size: int = 2,
+):
     """Write scenarios.json and one hidden/<name>.csv per scenario with hidden pairs.
 
     Each scenario dict has name, appeal, expected (list of predicate dicts or None) and
@@ -66,6 +75,8 @@ def write(out_dir: Path, target_relation: str, object_identity: bool, scenarios:
     document = {
         "target_relation": target_relation,
         "object_identity": object_identity,
+        "object_values": object_values,
+        "max_size": max_size,
         "scenarios": entries,
     }
     (out_dir / "scenarios.json").write_text(json.dumps(document, indent=2), encoding="utf-8")
@@ -91,5 +102,7 @@ def load(path: Path) -> ScenarioSet:
     return ScenarioSet(
         target_relation=document["target_relation"],
         object_identity=document.get("object_identity", False),
+        object_values=document.get("object_values", False),
+        max_size=document.get("max_size", 2),
         scenarios=tuple(scenarios),
     )
