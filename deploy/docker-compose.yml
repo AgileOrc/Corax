@@ -1,0 +1,75 @@
+# Corax in front of a stand-in campus API, on the dummy campus model.
+#
+#   client ──► envoy :8080 ──ext_authz──► opa (policy/ + demo/app.rego + rules from appeals)
+#                 │                          └── http.send ──► service /risk
+#                 ├── /corax/*  ──► service (appeals; writes Rego to the "generated" volume)
+#                 └── /*        ──► upstream (echo server standing in for the campus API)
+#
+# service writes rules into the "generated" volume and opa watches the same volume (--watch), so a rule
+# from an appeal is live without a restart. Both run inside Linux, so file events reach OPA.
+#
+# Before the first run, from the repository root:
+#   python scripts/prepare/make_dummy.py output/dummy-data
+#   python -m hgnn --data output/dummy-data --target-relation accessed --out output/dummy --learning-rate 0.01 --patience 50
+# Then: docker compose -f deploy/docker-compose.yml up --build
+# Another model folder: CORAX_MODEL=../output/other docker compose -f deploy/docker-compose.yml up
+
+name: corax-demo
+
+services:
+  envoy:
+    image: envoyproxy/envoy:v1.39.4
+    # the access log (OPA's reason, AI risk) is written every 200 ms instead of every 10 s
+    command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--file-flush-interval-msec", "200"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./envoy.yaml:/etc/envoy/envoy.yaml:ro
+    depends_on: [opa, service, upstream]
+
+  opa:
+    image: openpolicyagent/opa:1.21.2-envoy
+    command:
+      - run
+      - --server
+      - --addr=:8181
+      - --watch
+      - --log-level=info
+      - --set=plugins.envoy_ext_authz_grpc.addr=:9191
+      - --set=plugins.envoy_ext_authz_grpc.path=corax/authz/result
+      - /corax
+      - /app
+      - /data
+      - /policies/generated
+    volumes:
+      - ../policy/request.rego:/corax/request.rego:ro
+      - ../policy/authz.rego:/corax/authz.rego:ro
+      - ./demo/app.rego:/app/app.rego:ro
+      - ./demo/data.json:/data/data.json:ro
+      - ${CORAX_MODEL:-../output/dummy}/graph.json:/data/corax/graph/data.json:ro
+      - generated:/policies/generated:ro
+    depends_on: [service]
+
+  service:
+    build:
+      context: ..
+      dockerfile: deploy/service.Dockerfile
+    environment:
+      CORAX_MODEL_DIR: /model
+      CORAX_CONFIG: /config/data.json
+      GENERATED_DIR: /policies/generated
+      APPEALS_DIR: /appeals
+      OPA_PATH: /usr/local/bin/opa
+    volumes:
+      - ${CORAX_MODEL:-../output/dummy}:/model:ro
+      - ./demo/data.json:/config/data.json:ro
+      - generated:/policies/generated
+      - appeals:/appeals
+
+  upstream:
+    image: hashicorp/http-echo:1.0.0
+    command: ["-listen=:5678", "-text={\"campus_api\": \"ok\"}"]
+
+volumes:
+  generated:
+  appeals:
