@@ -1,178 +1,108 @@
-# Corax
+<p align="center">
+  <!-- TODO: logo -->
+  <img src="docs/assets/logo.png" alt="Corax" width="160">
+</p>
 
-**AI-assisted, policy-as-code authorization for REST APIs. Stops Broken Object Level Authorization (BOLA) with deterministic policies, adds an AI layer that can only tighten decisions, and turns admin decisions into new policy rules.**
+<h1 align="center">Corax</h1>
 
-> Status: work in progress.
+<p align="center">
+  <b>Policy-as-code authorization against BOLA, with an AI that can only deny.</b><br>
+  Rego (policy code) decides every request. A graph neural network flags the ones that don't fit, and turns an admin's approved exception into a validated rule for everyone in the same situation.
+</p>
+
+<p align="center">
+  <!-- TODO: badges, e.g. CI, license -->
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-TODO-blue"></a>
+</p>
 
 ---
 
-## Why
+## Demo
 
-Authorization checks in APIs are usually written ad hoc inside each service. They are inconsistent between developers, undocumented, and hard to audit, which is why BOLA (OWASP API1) keeps happening.
+<!-- TODO: GIF or video of `bash deploy/demo/demo.sh` -->
+<p align="center"><img src="docs/assets/demo.gif" alt="Corax demo" width="800"></p>
 
-Pure machine-learning access control is not the answer either: models are hard to update when rules change, can "forget" old decisions, and can be fooled by manipulated attributes.
+| Step | What happens | Result |
+|---|---|---|
+| 1 | A user requests a resource they have no relation to (BOLA) | **403**: denied by policy |
+| 2 | An over-broad rule lets the same request through policy | **403**: the **Corax AI denies** it, the pair doesn't fit the access graph |
+| 3 | An admin approves one user's appeal | A rule is generated, validated and loaded by OPA (policy engine) **without restart** |
+| 4 | A different user in the same situation, who never appealed | **200**: the new rule covers them |
+| 5 | The rule file is deleted | **403** again: revoking is deleting a file |
 
-Corax keeps **policy code as the source of truth** and uses AI only where it helps:
+The demo runs on a synthetic campus, the full walkthrough is in [Full stack](docs/getting-started/full-stack.md).
+
+## Why Corax?
+
+Broken Object Level Authorization (OWASP API1) keeps happening because most applications never define their authorization rules in one place. Each service writes its own checks, ad hoc and inline, so there is no single set of rules to review, test or audit. When the organization changes, a new role or a new kind of access, every service has to be updated separately, and the checks quietly drift apart. A system built like this is hard to keep resilient.
+
+Pure machine-learning access control is no answer either: models are hard to audit, hard to update when the rules change, and can be deceived.
+
+Corax keeps all authorization rules as one policy code, the single source of truth, enforced in front of every service. When the organization needs a new rule, an admin's approved exception becomes a validated rule in that policy code, so it keeps up with how access is really granted instead of falling behind.
+
+AI sits only where its mistakes cannot become a false allow. The risk check runs after the policy has already allowed a request and can only turn that allow into a deny. In appeals, AI only suggests similar cases, an admin chooses the rule, and every rule is validated before it takes effect.
 
 | Layer | Role | Can it grant access? |
 |---|---|---|
-| Policy code (OPA / Rego) | Final authority, deterministic | Yes |
-| AI risk check (per request) | Flags suspicious requests that passed policy | **No, it can only deny** |
-| AI rule suggestion (admin flow) | Finds similar cases when an admin approves an appeal, writes a rule | Only through a validated rule; broad grants need a human |
+| Policy (OPA / Rego) | Final authority, deterministic | Yes |
+| AI risk check | Flags requests that passed policy but don't fit the access graph | No, it can only deny |
+| Appeals | Generalizes an admin's decision into a rule | Only through a validated rule; broad rules need a second confirmation |
 
----
+## Capabilities
 
-## How it works
+- **Deny-only AI**: `allow = policy_allow AND NOT ai_high_risk`, written in Rego so it can be audited
+- **Graph risk score** from a heterogeneous GraphSAGE model of users, objects and their relations
+- **Appeals that generalize**: similar cases (kNN on embeddings) --> candidate rules from the appellant's own facts, narrowest first
+- **Blast-radius tiers**: share of users, new pairs and mean risk decide whether a rule applies at once or waits for an admin
+- **Validated Rego**: syntax, attribute whitelist, the application's own tests, and equivalence with the approved pattern
+- **Live reload, instant revoke**: each rule from an appeal is saved as its own `.rego` file, OPA watches that folder and loads a new rule within milliseconds, without a restart. Deleting the file revokes the rule
+- **Domain-agnostic**: any application described as typed nodes and edges in two CSV files
 
-### 1. Request path (every request)
+## Results
 
-```
-Client ──► Envoy (PEP) ──► OPA (PDP, policy code)
-                             │  deny  ──────────────────────────► 403
-                             │  allow ↓
-                             └──► AI-Corax /risk   risk = 1 − σ(h_user · h_object)
-                                    low risk  → forward to the application
-                                    high risk → 403, logged
-```
-
-- User identity comes **only from a verified JWT**, object ID from the URL path. Both are handled in Rego. Attributes are never taken from the request body.
-- OPA only asks AI-Corax after the policy allowed the request, and the final rule is `allow = base_allow AND NOT ai_high_risk`, so the AI can only deny.
-- If AI-Corax errors or times out, the policy decision stands and the event is logged.
-- If OPA is down, Envoy denies everything (`failure_mode_allow: false`).
-
-### 2. Admin path (when an admin approves an appeal)
-
-```
-Lecturer Budi (head of study program IF) is denied a student's grades, appeals, admin approves
-   │
-   ▼
-Exact exception for Budi applied immediately
-   │
-   ▼
-HGNN embeddings ──► nearest similar (lecturer, student) pairs that policy still denies
-   │                 (e.g. Sari, head of study program SI, and her students)
-   ▼
-Pattern miner ──► shared attributes/relations (e.g. position = head of program, same study program)
-   │
-   ▼
-Tier check (category-tree depth + affected users)
-   │
-   ├─ small scope → continue automatically
-   └─ large scope → waits for admin confirmation
-   ▼
-Local LLMs write a Rego rule (mixture of agents, majority vote)
-   │
-   ▼
-Validation (opa check, attribute whitelist, opa test, equivalence with the approved pattern)
-   │
-   ▼
-Rule written to policies/generated/ ──► OPA reloads (--watch), everything logged
-```
-
-**Risk tiers.** Users are grouped in a category tree (root → lecturer/student → faculty → study program → position). A pattern is scored by the **depth** of the lowest common category it covers and the **number of users** under it. Shallow, large scopes need admin confirmation; deep, small scopes are applied automatically. A rule is revoked by deleting its file.
-
-The full AI design, including how it maps to the papers below, is in [docs/ai-design.md](docs/ai-design.md).
-
----
-
-## Architecture
-
-| Component | Tech | Notes |
+| | Data | Result |
 |---|---|---|
-| `demo-api` | Python, FastAPI | Deliberately BOLA-vulnerable campus API |
-| `sidecar` | Envoy (`ext_authz`) | One per service |
-| `policy-engine` | OPA with `opa-envoy-plugin` (Rego) | JWT check, path parsing, policy; loads `policies/` with `--watch` |
-| `corax-service` | Python, FastAPI | `/risk` (per-request risk score) and `/appeals` (similar cases → new rule) |
-| `hgnn` | PyTorch Geometric (heterogeneous GraphSAGE) | Recomputes embeddings periodically and writes them to a folder that `corax-service` reads; reimplemented from Yin et al. 2024 |
-| `llm` | Ollama (local models) | Writes Rego rules from mined patterns; reimplements Mai et al. 2025 |
-| `data-generator` | Python, Faker | Synthetic users, relations, category tree, labelled access logs |
+| Risk score | [Amazon Access Samples](https://archive.ics.uci.edu/dataset/216/amazon+access+samples) (36k users, 595k access edges) | AUC 0.985 random / 0.897 hard negatives, 0.94% false deny |
+| Appeals | [Xu & Stoller ABAC policies](https://www3.cs.stonybrook.edu/%7Estoller/software) (45 hidden rules) | Hidden rule ranked first for 26/45, top 5 for 37/45 |
+| Appeals | Amazon, inferred role rules (10 hidden rules) | Hidden rule in the top 2 for 10/10 |
 
----
+Details: [Evaluation](docs/evaluation.md).
 
 ## Quick start
 
+See the model predict access it has never seen, without Docker:
+
 ```bash
-git clone https://github.com/<you>/Corax.git
-cd Corax
-docker compose up --build
+python scripts/prepare/make_dummy.py output/dummy-data
+python -m hgnn --data output/dummy-data --target-relation accessed --out output/dummy --learning-rate 0.01 --patience 50
+python scripts/demo_risk.py --model-dir output/dummy
 ```
 
-The demo API is exposed through the sidecar at `http://localhost:8080`.
+Full stack with Envoy, OPA and the service:
 
-<!-- TODO: fill in once the demo scripts exist -->
 ```bash
-# 1. BOLA attempt blocked by policy
-./demo/01_bola_blocked.sh
-
-# 2. Over-broad rule lets a request through policy, AI risk check denies it
-./demo/02_broad_rule_caught.sh
-
-# 3. Admin exception -> similar cases -> proposed rule -> impact test
-./demo/03_rule_suggestion.sh
+docker compose -f deploy/docker-compose.yml up --build -d
+bash deploy/demo/demo.sh
 ```
 
----
+Installation and walkthrough: [Quick start](docs/getting-started/quickstart.md) · [Full stack](docs/getting-started/full-stack.md)
 
-## Configuration
+## Documentation
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `POLICY_ENGINE_URL` | `http://policy-engine:8181` | OPA endpoint |
-| `CORAX_MODEL_DIR` | `output/hgnn` | Folder written by `hgnn` (embeddings, node ids, metadata) |
-| `AI_RISK_THRESHOLD` | from `metadata.json` | Optional override; above this, a policy-allowed request is denied |
-| `AI_TIMEOUT_MS` | `20` | Max time for the AI check |
-| `AI_ON_ERROR` | `follow_policy` | What to do if the model fails |
-| `AUTO_APPLY_MAX_USER_SHARE` | `0.4` | Max share of all users (0–1) that an appeal rule may grant new access to without admin confirmation |
-| `AUTO_APPLY_MAX_PAIRS` | `50` | Max new (user, object) pairs for automatic grants |
-| `AUTO_APPLY_MAX_MEAN_RISK` | `0.5` | Max mean AI risk of the new pairs for automatic grants |
-| `OLLAMA_URL` | `http://host.docker.internal:11434` | Local LLM endpoint |
-| `LLM_MODELS` | `qwen2.5-coder:7b,llama3.1:8b` | Models used as rule generators (majority vote) |
-
----
-
-## Repository layout
-
-```
-.
-├── hgnn/              # trains the HGNN, exports embeddings
-├── service/           # /risk and /appeals service
-├── policy/            # generic Rego framework (JWT, risk call, deny-only rule)
-├── deploy/            # envoy.yaml, docker-compose.yml
-├── scripts/           # helpers, e.g. dataset converters
-├── docs/              # design documents and data format
-└── tests/
-```
-
-The campus demo (vulnerable API, campus policies, synthetic data, demo scripts) lives in a separate repository, Corax-Demo.
-
----
-
-## Scope
-
-**In scope:** object-level authorization (BOLA), centralized policy-as-code (ABAC + ReBAC), AI-assisted rule suggestion, AI risk check that only tightens decisions.
-
-**Out of scope (roadmap):**
-- Broken Object Property Level Authorization (BOPLA): field-level response filtering and mass-assignment blocking
-- Fully autonomous (agentic) policy changes without human approval
-- Production hardening (HA, multi-cluster)
-
----
-
-## Related work
-
-- Nobi et al., *Toward Deep Learning Based Access Control*, ACM CODASPY 2022
-- Nobi et al., *Administration of Machine Learning Based Access Control*, ESORICS 2022
-- You et al., *A knowledge graph empowered online learning framework for access control decision-making*, World Wide Web 2023
-- Yin et al., *A heterogeneous graph-based semi-supervised learning framework for access control decision-making*, World Wide Web 2024 ([code](https://github.com/happyResearcher/ACHG-SSLF); Corax reimplements the method and does not copy code)
-- Zhang et al., *Robust Heterogeneous Graph Neural Networks against Adversarial Attacks*, AAAI 2022
-- Mai et al., *LLM-Based Fine-Grained ABAC Policy Generation*, ICISSP 2025
-
----
-
-## Disclaimer
-
-`demo-api` is intentionally vulnerable. Run it only in an isolated environment.
+<!-- TODO: GitBook link -->
+Full documentation: **[GitBook](https://TODO)** (also in [`docs/`](docs/README.md)).
 
 ## License
 
-<!-- TODO: choose an open-source license, e.g. Apache-2.0 or MIT -->
+<!-- TODO -->
+Released under the [TODO](LICENSE) license.
+
+## Authors
+
+<!-- TODO -->
+- [Vienenta Graciella](https://github.com/AgileOrc)
+- [Fredly Artha Immanuel](https://github.com/Imkungoingglitch)
+- [Daniel Agatha](https://github.com/waarsss)
+
+## Prior Research
+[1] J. Yin, G. Chen, W. Hong, J. Cao, H. Wang, and Y. Miao, "A heterogeneous graph-based semi-supervised learning framework for access control decision-making," *World Wide Web*, vol. 27, no. 4, Art. no. 35, 2024, doi: [10.1007/s11280-024-01275-2](https://doi.org/10.1007/s11280-024-01275-2).
