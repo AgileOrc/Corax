@@ -101,7 +101,8 @@ Released under the [TODO](LICENSE) license.
 
 <!-- TODO -->
 - [Vienenta Graciella](https://github.com/AgileOrc)
-- []()
+- [Fredly Artha Immanuel](https://github.com/Imkungoingglitch)
+- [Daniel Agatha](https://github.com/waarsss)
 
 ## Prior Research
 [1] J. Yin, G. Chen, W. Hong, J. Cao, H. Wang, and Y. Miao, "A heterogeneous graph-based semi-supervised learning framework for access control decision-making," *World Wide Web*, vol. 27, no. 4, Art. no. 35, 2024, doi: [10.1007/s11280-024-01275-2](https://doi.org/10.1007/s11280-024-01275-2).
