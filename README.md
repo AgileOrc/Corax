@@ -1,8 +1,8 @@
+<h1 align="center">Corax: Authorization Policies That Learn from Admin Decisions</h1>
+
 <p align="center">
   <img src="docs/assets/header.png" alt="Corax" width="100%">
 </p>
-
-<h1 align="center">Corax</h1>
 
 <p align="center">
   <b>Policy-as-code authorization against BOLA, with an AI that can only deny.</b><br>
