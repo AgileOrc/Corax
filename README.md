@@ -1,6 +1,5 @@
 <p align="center">
-  <!-- TODO: logo -->
-  <img src="docs/assets/logo.png" alt="Corax" width="160">
+  <img src="docs/assets/header.png" alt="Corax" width="100%">
 </p>
 
 <h1 align="center">Corax</h1>
@@ -22,13 +21,14 @@
 <!-- TODO: GIF or video of `bash deploy/demo/demo.sh` -->
 <p align="center"><img src="docs/assets/demo.gif" alt="Corax demo" width="800"></p>
 
-| Step | What happens | Result |
+| Case | What happens | Result |
 |---|---|---|
-| 1 | A user requests a resource they have no relation to (BOLA) | **403**: denied by policy |
-| 2 | An over-broad rule lets the same request through policy | **403**: the **Corax AI denies** it, the pair doesn't fit the access graph |
-| 3 | An admin approves one user's appeal | A rule is generated, validated and loaded by OPA (policy engine) **without restart** |
-| 4 | A different user in the same situation, who never appealed | **200**: the new rule covers them |
-| 5 | The rule file is deleted | **403** again: revoking is deleting a file |
+| 1 | A user requests a resource the policy does not allow | **403**: denied by policy |
+| 2–3 | An over-broad rule lets requests through policy | The pair that fits the access graph gets **200**; the odd one gets **403**, the **Corax AI denies** it |
+| 4 | An admin approves one user's appeal; the rule is small | Rule generated, validated and loaded by OPA (policy engine) **without restart**; a different user in the same situation, who never appealed, gets **200** |
+| 5 | An appeal whose rule would be large | **409**: waits for the admin, who declines and keeps only the exact exception |
+| 6 | Another large appeal | The admin approves after reviewing its scope; the rule is applied |
+| 7 | The rule file is deleted | **403** again: a rule is rolled back by deleting its file |
 
 The demo runs on a synthetic campus, the full walkthrough is in [Full stack](docs/getting-started/full-stack.md).
 
