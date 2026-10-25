@@ -10,9 +10,8 @@
 </p>
 
 <p align="center">
-  <!-- TODO: badges, e.g. CI, license -->
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-TODO-blue"></a>
-</p>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue" alt="License: Apache 2.0"></a>
+  <img src="https://img.shields.io/badge/Track-Web%20Application%20Security-red" alt="Focus: Web Application Security">
 
 | Case | What happens | Result |
 |---|---|---|
@@ -40,7 +39,6 @@ AI sits only where its mistakes cannot become a false allow. The risk check runs
 | Policy (OPA / Rego) | Final authority, deterministic | Yes |
 | AI risk check | Flags requests that passed policy but don't fit the access graph | No|
 | Appeals | Generalizes an admin's decision into a rule | Only through a validated rule. Broad rules need a second confirmation |
-
 ## Capabilities
 
 - **Deny-only AI**: `allow = policy_allow AND NOT ai_high_risk`, written in Rego so it can be audited
@@ -87,8 +85,7 @@ Full documentation: **[GitBook](https://TODO)** (also in [`docs/`](docs/README.m
 
 ## License
 
-<!-- TODO -->
-Released under the [TODO](LICENSE) license.
+Released under the [Apache License 2.0](LICENSE). Copyright 2026 The Corax Authors.
 
 ## Authors
 
