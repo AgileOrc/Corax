@@ -9,7 +9,7 @@
 #                                       large rule approved by the admin, revoke
 #
 # Needs only docker and curl: tokens are signed and JSON is read with the Python inside the service container.
-# The ids are those of output/dummy trained as in docs/getting-started/quickstart.md; another model may
+# The ids are those of output/dummy trained as in docs/getting-started.md; another model may
 # give other risks, so check the pairs with scripts/similar_cases.py first.
 set -euo pipefail
 

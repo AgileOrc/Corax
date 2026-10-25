@@ -1,93 +1,23 @@
 # policy
 
-Generic Rego framework shared by every application that uses Corax (package `corax.authz`).
+The Rego framework OPA runs for every request. It is the same for every application that uses Corax:
+it verifies the JWT, matches the route, runs the application's own rules, asks the AI for the risk and
+applies the deny-only rule.
 
-```
-Envoy ext_authz input
-  1. verify the JWT                      → user.id = sub
-  2. match method + path to a route      → action, resource {type, id, ...}
-  3. admin_allow     = corax.* action AND user in config.admin.users   (Corax admin routes)
-     exception_allow = data.app.exceptions.allow  (the exact pair an admin approved in an appeal)
-     policy_allow    = data.app.authz.allow       (the application's rules)
-                    OR data.app.generated.allow   (rules added through appeals)
-  4. ai_high_risk = POST corax-service /risk            (only when policy_allow and not an exception)
-  5. allow = admin_allow OR exception_allow OR (policy_allow AND NOT ai_high_risk)
-```
+## Files
 
-| File | Content |
+| File | Does |
 |---|---|
-| `request.rego` | JWT verification, route matching, the normalised `request` |
-| `authz.rego` | `allow`, the AI risk check, `reason`, and `result` for opa-envoy-plugin |
-| `authz_test.rego` | Tests; corax-service and the application's rules are mocked |
-| `config.example.json` | Example configuration |
+| `request.rego` | Verifies the JWT, matches the method and path to a route, builds the request the rules see |
+| `authz.rego` | The decision: policy, admin routes, exceptions, the AI risk check and the reason |
+| `authz_test.rego` | Tests, with the service and the application's rules mocked |
+| `config.example.json` | Example configuration: JWT, routes, AI address, admins |
 
-## What an application provides
+## Run
 
-**1. Rules** in package `app.authz` that define `allow`. Their `input` is the normalised request,
-never the raw Envoy input:
-
-```json
-{
-  "user": {"id": "lecturer_budi"},
-  "action": "read_grades",
-  "resource": {"type": "student", "id": "student_candra", "course_code": "IF201"}
-}
-```
-
-Appeals write two kinds of files to `policies/generated/`, both defining `allow`:
-
-| Package | Content | AI risk check |
-|---|---|---|
-| `app.exceptions` | Only the exact (user, action, object) the admin approved | Skipped: the admin reviewed it |
-| `app.generated` | The broader rule mined from similar cases | Yes |
-
-**2. Configuration** under `data.corax.config` (see `config.example.json`):
-
-| Key | Meaning |
-|---|---|
-| `jwt` | Constraints for `io.jwt.decode_verify`: `secret` (HS256, demo) or `cert` (JWKS / PEM, production), plus `iss` and `aud`. `exp` and `nbf` are always checked |
-| `routes` | `method`, `path` with `:name` parameters, `action`, `resource_type`. Exactly one route must match, otherwise the request is denied. The `:id` parameter is the object sent to corax-service |
-| `ai.url`, `ai.timeout` | corax-service address and `http.send` timeout (default `20ms`). Without `ai`, no risk check is made |
-| `admin.users` | User ids (JWT `sub`) allowed to use the Corax admin routes. Without it, nobody is an admin |
-
-**3. Graph data.** `hgnn` writes `graph.json` (node id → relation → destination ids).
-Generated rules read it as `data.corax.graph`, so copy it to `<policy folder>/corax/graph/data.json`;
-OPA places data files by folder and merges it with `data.corax.config`.
-
-## Admin routes
-
-Corax adds these routes itself; applications do not list them in `config.routes`. They are served
-by corax-service, so Envoy routes `/corax/` there.
-
-| Method and path | Action |
-|---|---|
-| `POST /corax/appeals` | `corax.appeal.create` |
-| `GET /corax/appeals/:id` | `corax.appeal.read` |
-| `POST /corax/appeals/:id/confirm` | `corax.appeal.confirm` |
-
-Only `config.admin.users` may call them. For `corax.*` actions the application's rules, appeal
-rules and exceptions are ignored, so no generated rule can make someone an admin. Admin actions do
-not call the AI risk check.
-
-## Guarantees
-
-- Identity comes only from a verified JWT (`sub`). The resource comes only from the URL path; the query string and body are ignored.
-- The AI is asked only after the policy allowed the request, so it can only deny.
-- If corax-service errors, times out, or does not know the user or object, the policy decision stands (`reason`: `allowed without AI check`).
-- Rules from appeals also go through the AI risk check; only the exact pair an admin approved skips it.
-- Only listed admins can create or confirm appeals; no rule can grant that.
-- An allowed request carries the verified user id to the upstream service in `x-corax-user` (set by Envoy from `result.headers`). corax-service does not rely on it: it verifies the admin's JWT itself.
-
-## Entry points
-
-| Path | Value |
-|---|---|
-| `corax/authz/allow` | boolean |
-| `corax/authz/result` | `{"allowed": bool, "headers": {"x-corax-user": "..."}, "dynamic_metadata": {"corax_reason": "...", "corax_risk": 0.12}}`, for opa-envoy-plugin and Envoy access logs |
-
-## Test
-
-```
+```bash
 opa check --strict policy
 opa test policy -v
 ```
+
+What an application provides, the configuration and the guarantees: [docs/reference.md](../docs/reference.md#policy).

@@ -10,27 +10,19 @@
 </p>
 
 <p align="center">
-  <!-- TODO: badges, e.g. CI, license -->
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-TODO-blue"></a>
-</p>
-
----
-
-## Demo
-
-<!-- TODO: GIF or video of `bash deploy/demo/demo.sh` -->
-<p align="center"><img src="docs/assets/demo.gif" alt="Corax demo" width="800"></p>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue" alt="License: Apache 2.0"></a>
+  <img src="https://img.shields.io/badge/Track-Web%20Application%20Security-red" alt="Focus: Web Application Security">
 
 | Case | What happens | Result |
 |---|---|---|
 | 1 | A user requests a resource the policy does not allow | **403**: denied by policy |
-| 2–3 | An over-broad rule lets requests through policy | The pair that fits the access graph gets **200**; the odd one gets **403**, the **Corax AI denies** it |
-| 4 | An admin approves one user's appeal; the rule is small | Rule generated, validated and loaded by OPA (policy engine) **without restart**; a different user in the same situation, who never appealed, gets **200** |
+| 2, 3 | An over-broad rule lets requests through policy | The pair that fits the access graph gets **200**, the odd one gets **403**, the **Corax AI denies** it |
+| 4 | An admin approves one user's appeal and the rule is small | Rule generated, validated and loaded by OPA (policy engine) **without restart**. A different user in the same situation, who never appealed, gets **200** |
 | 5 | An appeal whose rule would be large | **409**: waits for the admin, who declines and keeps only the exact exception |
-| 6 | Another large appeal | The admin approves after reviewing its scope; the rule is applied |
+| 6 | Another large appeal | The admin approves after reviewing its scope and the rule is applied |
 | 7 | The rule file is deleted | **403** again: a rule is rolled back by deleting its file |
 
-The demo runs on a synthetic campus, the full walkthrough is in [Full stack](docs/getting-started/full-stack.md).
+The demo runs on dummy data, the full walkthrough is in [getting started](docs/getting-started.md#3-end-to-end-demo-with-docker).
 
 ## Why Corax?
 
@@ -40,14 +32,13 @@ Pure machine-learning access control is no answer either: models are hard to aud
 
 Corax keeps all authorization rules as one policy code, the single source of truth, enforced in front of every service. When the organization needs a new rule, an admin's approved exception becomes a validated rule in that policy code, so it keeps up with how access is really granted instead of falling behind.
 
-AI sits only where its mistakes cannot become a false allow. The risk check runs after the policy has already allowed a request and can only turn that allow into a deny. In appeals, AI only suggests similar cases, an admin chooses the rule, and every rule is validated before it takes effect.
+AI sits only where its mistakes cannot become a false allow. The risk check runs after the policy has already allowed a request and can only turn that allow into a deny. In appeals, AI only suggests similar cases, an admin accepts the rule, and every rule is validated before it takes effect.
 
 | Layer | Role | Can it grant access? |
 |---|---|---|
 | Policy (OPA / Rego) | Final authority, deterministic | Yes |
-| AI risk check | Flags requests that passed policy but don't fit the access graph | No, it can only deny |
-| Appeals | Generalizes an admin's decision into a rule | Only through a validated rule; broad rules need a second confirmation |
-
+| AI risk check | Flags requests that passed policy but don't fit the access graph | No|
+| Appeals | Generalizes an admin's decision into a rule | Only through a validated rule. Broad rules need a second confirmation |
 ## Capabilities
 
 - **Deny-only AI**: `allow = policy_allow AND NOT ai_high_risk`, written in Rego so it can be audited
@@ -78,14 +69,14 @@ python -m hgnn --data output/dummy-data --target-relation accessed --out output/
 python scripts/demo_risk.py --model-dir output/dummy
 ```
 
-Full stack with Envoy, OPA and the service:
+End-to-end demo with Envoy, OPA and the service (Docker):
 
 ```bash
 docker compose -f deploy/docker-compose.yml up --build -d
 bash deploy/demo/demo.sh
 ```
 
-Installation and walkthrough: [Quick start](docs/getting-started/quickstart.md) · [Full stack](docs/getting-started/full-stack.md)
+Installation and walkthrough: [Getting started](docs/getting-started.md)
 
 ## Documentation
 
@@ -94,8 +85,7 @@ Full documentation: **[GitBook](https://TODO)** (also in [`docs/`](docs/README.m
 
 ## License
 
-<!-- TODO -->
-Released under the [TODO](LICENSE) license.
+Released under the [Apache License 2.0](LICENSE). Copyright 2026 The Corax Authors.
 
 ## Authors
 
