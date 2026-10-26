@@ -41,6 +41,24 @@ CORAX_MODEL_DIR=output/exp-hard50 uvicorn main:app --app-dir service --port 8000
 
 A large rule needs `acknowledge_scope`. No regulation fixes these numbers (ISO 27001, NIST 800-53 and PCI DSS ask that access grants are approved and logged, not for a size limit). Set them to the organization's risk appetite. `AUTO_APPLY_MAX_USER_SHARE=0` makes every rule wait for an admin.
 
+To change a limit, set it in the service's environment. With Docker, in `deploy/docker-compose.yml`
+under `service` → `environment`:
+
+```yaml
+      AUTO_APPLY_MAX_USER_SHARE: "0.5"
+      AUTO_APPLY_MAX_PAIRS: "100"
+      AUTO_APPLY_MAX_MEAN_RISK: "0.5"
+```
+
+Then recreate the service with `docker compose -f deploy/docker-compose.yml up -d service`. Without Docker:
+
+```bash
+AUTO_APPLY_MAX_USER_SHARE=0.5 CORAX_MODEL_DIR=output/dummy uvicorn main:app --app-dir service --port 8000
+```
+
+The cases of `deploy/demo/demo.sh` are written for the default limits. With other limits an appeal
+may change tier, for example the large one in case 5 may become small.
+
 Appeals need `graph.json` and `access.json` in the model folder. Without them only `/risk` runs.
 
 ### `POST /risk`

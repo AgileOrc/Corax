@@ -50,3 +50,5 @@ check that only tightens decisions, appeals that turn an admin's decision into a
 - Mini-batch training for graphs that do not fit in memory.
 - Ranking candidates by how varied the similar cases are, so object-only slices rank lower.
 - Category depth (distance from the root of an organization tree) as an extra tier input, where such a tree exists.
+- Calibrated tier limits. The limits on the share of users, new pairs and mean risk are design defaults, not measured values, and no standard fixes them. Derive them from rules known to be correct and rules known to be too broad, and allow the pairs limit as a share of existing access.
+- Policy languages other than Rego. The graph, the risk score and the appeal flow do not depend on Rego. Only the rule writer, its validation and the enforcement point do.
