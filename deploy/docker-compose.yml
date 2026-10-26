@@ -44,6 +44,9 @@ services:
       GENERATED_DIR: /policies/generated
       APPEALS_DIR: /appeals
       OPA_PATH: /usr/local/bin/opa
+      AUTO_APPLY_MAX_USER_SHARE: "0.5"
+      AUTO_APPLY_MAX_PAIRS: "100"
+      AUTO_APPLY_MAX_MEAN_RISK: "0.5"
     volumes:
       - ${CORAX_MODEL:-../output/dummy}:/model:ro
       - ./demo/data.json:/config/data.json:ro
