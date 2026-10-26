@@ -30,7 +30,7 @@ Corax keeps **policy code as the source of truth** and uses AI only where it hel
 | `hgnn/` | Trains the heterogeneous GraphSAGE model and exports one embedding per node (`python -m hgnn`) |
 | `scripts/` | Dataset preparation, evaluation, and the demo scripts |
 
-## Where to go next
+## Table of Contents
 
 * [Getting started](getting-started.md): install, train the model once, run the demo with or without Docker.
 * [How Corax works](how-it-works.md): components, the request path, the risk score and the appeal path.
