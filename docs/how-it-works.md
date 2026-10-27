@@ -165,6 +165,17 @@ they can reach through appeals.
 reloads the same way, and who revoked it and when is recorded. Deleting the file by hand also works but
 is not recorded.
 
+**Without an appeal.** A user cannot ask for what they cannot see, and an application should not show
+titles of objects someone may not open (`corax/authz/allowed_objects` lists only the allowed ones). So
+access can also start from the admin, through the same flow:
+
+- **The admin gives access** to someone who joined a team or changed role: `POST /corax/appeals` with the
+  admin's token, without any request.
+- **Corax suggests access** the model expects but nobody granted (`GET /corax/suggestions`): most of the
+  user's closest peers can reach the object, and the risk is low.
+- **A user asks for a whole unit** (e.g. a department, chosen from a list, never typed) without naming a
+  document. Corax ranks that unit's objects for them (`POST /corax/rank`) and the admin picks.
+
 Policy files change only on disk. OPA's REST API is never used for writes and is not exposed.
 
 | Written | Where | When |

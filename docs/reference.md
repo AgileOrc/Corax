@@ -20,6 +20,8 @@ FastAPI service called by OPA and by admins. It reads the folder written by `hgn
 | `POST /corax/appeals/{id}/revoke` | Admin | Deletes the rule (and, if asked, the exception) and records who did it |
 | `GET /corax/rules` | Admin | Every rule and exception from an appeal still in effect: who gained access and how it was used, as data and as plain sentences |
 | `GET /corax/me/access` | Any user with a valid token | The resources this user can reach through appeals. The user comes only from the token |
+| `GET /corax/suggestions?user=&limit=` | Admin | Access the model expects but nobody granted yet, for an admin to review. Nothing is written |
+| `POST /corax/rank` | Admin | The objects linked to a node (e.g. a department) that a user cannot reach yet, ranked for that user |
 
 Concepts: [Risk score](how-it-works.md#risk-score), [Appeal path](how-it-works.md#appeal-path).
 
@@ -143,6 +145,31 @@ Used 1 time by 1 person:
 
 It lists only access from appeals. Access from the application's own rules is not listed.
 
+### Suggested access and ranking a unit
+
+The model was trained to predict access. Besides denying pairs that do not fit, its predictions point at
+access a user probably needs but nobody granted. Both endpoints score a pair the same way: the model's
+risk, and how many of the user's 10 most similar users can already reach the object (from the access
+history and from appeals). Neither writes anything: an admin gives access through the appeal flow.
+
+```
+GET  /corax/suggestions?limit=20
+  → 200 [{"user": "bob", "object": "report_210", "risk": 0.08, "peers": {"with_access": 7, "of": 10},
+          "description": "7 of the 10 people most like bob can open report_210."}, ...]
+
+POST /corax/rank   {"user": "bob", "relation": "owned_by", "node": "department_finance"}
+  → 200 {"objects": [...ranked as above, every object of the unit bob cannot reach yet...],
+         "warning": null | "None of the people most like this user can open anything here. ..."}
+```
+
+- A pair is suggested when its risk is at most the threshold and at least half of the 10 peers can reach
+  the object. Both numbers are design choices, not measured values (`service/suggest.py`).
+- `rank` lists every object of the unit, best first, and warns when no peer can reach any of them: the
+  unit may be the wrong one.
+- `suggestions` scans every user against every object. Above 2,000,000 pairs it answers 422 and must be
+  asked for one user (`?user=`).
+- Only admins call them: the results name objects the user cannot open.
+
 - The exception (`<id>-exception.rego`) is written as soon as the appeal is created, the rule
   (`<id>-rule.rego`) only after the admin accepts one of the proposed rules. Both are validated with opa first and
   written atomically, so OPA never loads half a file.
@@ -243,6 +270,8 @@ by corax-service, so Envoy routes `/corax/` there.
 | `POST /corax/appeals/:id/revoke` | `corax.appeal.revoke` |
 | `GET /corax/rules` | `corax.rules.read` |
 | `GET /corax/me/access` | `corax.me.access`, any user with a valid token |
+| `GET /corax/suggestions` | `corax.suggestions.read` |
+| `POST /corax/rank` | `corax.rank.read` |
 
 Only `config.admin.users` may call them, except `corax.me.access`, which lists only the caller's own access. For `corax.*` actions the application's rules, appeal
 rules and exceptions are ignored, so no generated rule can make someone an admin. Admin actions do
@@ -262,6 +291,7 @@ not call the AI risk check.
 | Path | Value |
 |---|---|
 | `corax/authz/allow` | boolean |
+| `corax/authz/allowed_objects` | Of `input.objects`, the ones the policy (the application's rules, rules from appeals and exceptions) lets `input.user` reach with `input.action`, without the AI check. Input: `{"user", "action", "resource_type", "objects"}`. For an application that lists only what someone may open, through OPA's API on the internal network |
 | `corax/authz/result` | `{"allowed": bool, "headers": {"x-corax-user": "..."}, "dynamic_metadata": {"corax_reason": "...", "corax_risk": 0.12}}`, for opa-envoy-plugin and Envoy access logs |
 
 ### Test

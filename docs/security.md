@@ -43,6 +43,7 @@ check that only tightens decisions, appeals that turn an admin's decision into a
 
 ## Known limitations
 
+- Suggestions and unit rankings use design choices (10 peers, half of them with access, risk at most the threshold), not measured values. They help an admin decide and never grant anything.
 - The risk score is about pairs, not behavior over time. It does not detect fast enumeration by an
   otherwise legitimate user.
 - Hard cases (an object a peer has) are caught less often than random ones. Read [evaluation](evaluation.md).
@@ -60,3 +61,5 @@ check that only tightens decisions, appeals that turn an admin's decision into a
 - Category depth (distance from the root of an organization tree) as an extra tier input, where such a tree exists.
 - Calibrated tier limits. The limits on the share of users, new pairs and mean risk are design defaults, not measured values, and no standard fixes them. Derive them from rules known to be correct and rules known to be too broad, and allow the pairs limit as a share of existing access.
 - Policy languages other than Rego. The graph, the risk score and the appeal flow do not depend on Rego. Only the rule writer, its validation and the enforcement point do.
+- Asking for a unit in free text. Users choose a unit from a list today. Matching what they type ("money reports") to a unit ("Finance") needs a language model or a list of synonyms, and free text must not become a way to probe which units or documents exist.
+- Urgent access (break-glass). Corax has no way to grant access at once and review it afterwards: every access waits for an admin. An urgent case goes to an admin on call.

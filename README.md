@@ -48,6 +48,7 @@ AI sits only where its mistakes cannot become a false allow. The risk check runs
 - **Validated Rego**: syntax, attribute whitelist, the application's own tests, and equivalence with the approved pattern
 - **Live reload, instant revoke**: each rule from an appeal is saved as its own `.rego` file, OPA watches that folder and loads a new rule within milliseconds, without a restart. Revoking deletes the file and records who did it
 - **Transparent access changes**: every rule is shown to admins as a plain sentence, with who gained access when it was accepted and every later use of that access. Users can list the resources they reached through appeals
+- **Access without asking**: the model's predictions also point at access someone probably needs but nobody granted, for an admin to review. A user can ask for a whole unit without naming a document, and Corax ranks it for the admin
 - **Domain-agnostic**: any application described as typed nodes and edges in two CSV files
 
 ## Results
