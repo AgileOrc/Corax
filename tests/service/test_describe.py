@@ -17,7 +17,7 @@ def rule(*predicates, labels=None):
 def test_without_labels_the_ids_are_used():
     assert rule(SAME_DEPARTMENT, MANAGER) == (
         "An employee may read_report a report when the employee and the report have the same department "
-        "and the employee holds role_manager."
+        "and the employee holds role manager."
     )
 
 
@@ -39,9 +39,9 @@ def test_labels_make_the_sentence_readable():
     [
         (Predicate("object_has", "type", "invoice"), "the report type invoice"),
         (Predicate("direct", "owns"), "the employee owns the report"),
-        (Predicate("object_is", "", "report_42"), "the report is report_42"),
+        (Predicate("object_is", "", "report_42"), "the report is report 42"),
         (Predicate("shared", "member_of", "belongs_to"), "the employee's member of matches the report's belongs to"),
-        (Predicate("user_has", "works_on", "project_1"), "the employee works on project_1"),
+        (Predicate("user_has", "works_on", "project_1"), "the employee works on project 1"),
     ],
 )
 def test_every_kind_of_predicate(predicate, condition):
@@ -51,12 +51,20 @@ def test_every_kind_of_predicate(predicate, condition):
 def test_three_conditions_are_joined_with_commas():
     sentence = rule(SAME_DEPARTMENT, MANAGER, Predicate("direct", "owns"))
 
-    assert "department, the employee holds role_manager, and the employee owns the report." in sentence
+    assert "department, the employee holds role manager, and the employee owns the report." in sentence
+
+
+@pytest.mark.parametrize(
+    ("node", "readable"),
+    [("employee_E012", "employee E012"), ("document_D003", "document D003"), ("project_marketing1", "project marketing 1")],
+)
+def test_ids_without_a_label_stay_readable(node, readable):
+    assert Labels().node(node) == readable
 
 
 def test_exception_names_the_one_object():
     assert describe_exception("alice", "read_report", "report_105", "report") == (
-        "alice may read_report report_105, an exception for this one report only."
+        "alice may read_report report 105, an exception for this one report only."
     )
 
 

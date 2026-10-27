@@ -13,12 +13,15 @@ from patterns import Predicate, candidates, opened_pairs
 from risk import RiskModel
 from rules import APPEAL_ID, render_exception, render_rule
 from similar import SimilarityIndex
+from suggest import score, suggested
 from tier import assess
 from validate import Report, expected_decisions, validate, write_atomic
 
 ID_NUMBER = re.compile(r"^appeal-(\d+)$")
 # How many users a 409 response lists. The preview endpoint lists all of them.
 AFFECTED_IN_409 = 20
+# Above this many (user, object) pairs, suggestions are asked for one user at a time.
+MAX_SUGGESTION_PAIRS = 2_000_000
 
 
 class AppealError(Exception):
@@ -226,6 +229,50 @@ class AppealService:
                         if (appeal_id, kind, granted["action"]) not in found:
                             found.append((appeal_id, kind, granted["action"]))
 
+    def can_reach(self, user: str, obj: str) -> bool:
+        # Access the history shows, or access an appeal granted and nobody revoked.
+        if self.graph.has_access(user, obj):
+            return True
+        with self.usage_lock:
+            return bool(self.usage_index.get((user, obj)))
+
+    def suggestions(self, user: str | None = None, limit: int = 20) -> list[dict]:
+        # Access the model expects but nobody granted yet, for an admin to review (nothing is written).
+        users = [user] if user else self.index.user_ids
+        if user and user not in self.model.users:
+            raise AppealError(404, f"unknown user {user!r}")
+        if len(users) * len(self.index.object_ids) > MAX_SUGGESTION_PAIRS:
+            raise AppealError(422, "too many users and objects to scan at once: ask for one user")
+        found = [
+            s
+            for u in users
+            for s in suggested(score(self.model, self.index, self.can_reach, u, self.index.object_ids), self.model.threshold)
+        ]
+        found.sort(key=lambda s: (-s.peers_with_access / s.peers, s.risk, s.user, s.object))
+        return [self._scored(s) for s in found[:limit]]
+
+    def rank(self, user: str, relation: str, node: str) -> dict:
+        # The objects linked to node by relation (e.g. owned_by department_finance) that user cannot reach
+        # yet, most covered by peers first: for an admin answering a request for a whole unit.
+        if user not in self.model.users:
+            raise AppealError(404, f"unknown user {user!r}")
+        objects = [o for o in self.index.object_ids if node in self.graph.structure.get(o, {}).get(relation, ())]
+        scored = score(self.model, self.index, self.can_reach, user, objects)
+        warning = None
+        if scored and not any(s.peers_with_access for s in scored):
+            warning = "None of the people most like this user can open anything here. Check that this is the right unit."
+        return {"user": user, "relation": relation, "node": node, "objects": [self._scored(s) for s in scored], "warning": warning}
+
+    def _scored(self, s) -> dict:
+        labels = self.labels()
+        return {
+            "user": s.user,
+            "object": s.object,
+            "risk": round(s.risk, 4),
+            "peers": {"with_access": s.peers_with_access, "of": s.peers},
+            "description": f"{s.peers_with_access} of the {s.peers} people most like {labels.node(s.user)} can open {labels.node(s.object)}.",
+        }
+
     def rules(self) -> list[dict]:
         # Every rule and exception from an appeal that is still in effect, with who gained access and
         # how that access was used since, as data and as plain sentences for the admin.
@@ -249,6 +296,7 @@ class AppealService:
                     "file_missing": not (self.settings.generated_dir / f"{appeal_id}-{kind}.rego").exists(),
                     "access": granted["access"],
                     "usage": _usage_summary(kind_uses),
+                    "uses": kind_uses,
                 }
                 entry["summary"] = self._summary(entry, kind_uses, labels)
                 found.append(entry)

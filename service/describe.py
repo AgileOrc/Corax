@@ -1,6 +1,7 @@
 # Plain-language sentences for the rules an admin reviews. The Rego file is still what OPA enforces:
 # the sentence is built from the same predicates, so it cannot say something the rule does not do.
 import json
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -38,7 +39,8 @@ class Labels:
         return self.relations.get(relation, relation.replace("_", " "))
 
     def node(self, node: str) -> str:
-        return self.nodes.get(node, node)
+        # Without a label: project_marketing1 -> project marketing 1, employee_E012 -> employee E012
+        return self.nodes.get(node) or re.sub(r"([a-z])(\d+)$", r"\1 \2", node.replace("_", " "))
 
 
 def _strings(value) -> dict[str, str]:

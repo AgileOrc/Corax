@@ -407,6 +407,7 @@ def test_rules_show_who_gained_access_and_how_it_was_used(trusting_client):
     assert rule["access"]["by_user"] == [{"user": "sari", "objects": ["dewi"]}]
     assert rule["usage"]["uses"] == 1
     assert rule["usage"]["by_user"] == [{"user": "sari", "objects": {"dewi": 1}}]
+    assert [(u["user"], u["object"], u["action"]) for u in rule["uses"]] == [("sari", "dewi", "read_grades")]
     assert rule["summary"][0] == rule["description"]
     assert rule["summary"][1].startswith("Approved as a rule by admin_rina on ")
     assert rule["summary"][2] == "1 person gained access to 1 student."
@@ -513,3 +514,44 @@ def test_appeals_fail_closed_without_corax_config(settings):
     with TestClient(create_app(unconfigured), headers=ADMIN) as client:
         assert client.post("/corax/appeals", json=APPEAL).status_code == 503
         assert client.post("/risk", json={"user": "budi", "object": "ani"}).status_code == 200
+
+
+# --- suggested access and requests for a unit ------------------------------------------------------
+
+
+def test_rank_lists_the_unit_most_covered_by_peers_first(client):
+    ranked = client.post("/corax/rank", json={"user": "sari", "relation": "member_of", "node": "IF"}).json()
+
+    assert [o["object"] for o in ranked["objects"]][0] == "ani"
+    assert ranked["objects"][0]["peers"]["with_access"] == 1 and ranked["warning"] is None
+    assert ranked["objects"][0]["description"].endswith("people most like sari can open ani.")
+
+
+def test_rank_leaves_out_what_the_user_can_reach_and_warns_without_peers(client):
+    ranked = client.post("/corax/rank", json={"user": "budi", "relation": "member_of", "node": "IF"}).json()
+
+    assert [o["object"] for o in ranked["objects"]] == ["candra"]
+    assert "Check that this is the right unit" in ranked["warning"]
+
+
+def test_access_granted_by_an_appeal_is_not_suggested_again(client):
+    accept_head_rule(client)
+
+    ranked = client.post("/corax/rank", json={"user": "sari", "relation": "member_of", "node": "SI"}).json()
+
+    assert "dewi" not in [o["object"] for o in ranked["objects"]]
+
+
+def test_suggestions_have_low_risk_and_a_sentence(trusting_client):
+    found = trusting_client.get("/corax/suggestions").json()
+
+    assert all(s["risk"] <= 1.0 and s["description"].count(" people most like ") == 1 for s in found)
+    assert trusting_client.get("/corax/suggestions", params={"user": "nobody"}).status_code == 404
+
+
+def test_suggestions_and_rank_are_for_admins(settings):
+    with TestClient(create_app(settings)) as anonymous:
+        assert anonymous.get("/corax/suggestions").status_code == 401
+        assert anonymous.get("/corax/suggestions", headers=bearer("bob")).status_code == 403
+        body = {"user": "sari", "relation": "member_of", "node": "IF"}
+        assert anonymous.post("/corax/rank", json=body, headers=bearer("bob")).status_code == 403

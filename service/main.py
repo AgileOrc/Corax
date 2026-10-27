@@ -39,6 +39,11 @@ class ConfirmRequest(BaseModel):
     candidate: int | None = None
     acknowledge_scope: bool = False
 
+class RankRequest(BaseModel):
+    user: str = Field(min_length=1, max_length=256)
+    relation: str = Field(min_length=1, max_length=128)
+    node: str = Field(min_length=1, max_length=256)
+
 class RevokeRequest(BaseModel):
     # Also remove the appellant's own exception, not only the rule.
     exception: bool = False
@@ -138,6 +143,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         record = appeals().confirm(appeal_id, body.candidate, body.acknowledge_scope, admin)
         log.info("appeal %s %s by %s", appeal_id, record["status"], admin)
         return record
+
+    @app.get("/corax/suggestions")
+    def list_suggestions(user: str | None = None, limit: int = 20, admin: str = Depends(require_admin)) -> list[dict]:
+        return appeals().suggestions(user, max(1, min(limit, 200)))
+
+    @app.post("/corax/rank")
+    def rank_objects(body: RankRequest, admin: str = Depends(require_admin)) -> dict:
+        return appeals().rank(body.user, body.relation, body.node)
 
     @app.get("/corax/rules")
     def list_rules(admin: str = Depends(require_admin)) -> list[dict]:
