@@ -51,13 +51,20 @@ def _rule(package: str, metadata: dict, body: list[str]) -> str:
 
 
 def render_rule(
-    appeal_id: str, action: str, predicates: Sequence[Predicate], custom: dict | None = None
+    appeal_id: str,
+    action: str,
+    predicates: Sequence[Predicate],
+    custom: dict | None = None,
+    description: str | None = None,
 ) -> str:
     check_appeal_id(appeal_id)
+    pattern = " AND ".join(p.text() for p in predicates)
+    # With a plain-language description, the technical pattern moves to custom.pattern.
+    extra = {"pattern": pattern} if description else {}
     metadata = {
         "title": appeal_id,
-        "description": " AND ".join(p.text() for p in predicates),
-        "custom": {"appeal_id": appeal_id, **(custom or {})},
+        "description": description or pattern,
+        "custom": {"appeal_id": appeal_id, **extra, **(custom or {})},
     }
     body = [f"input.action == {literal(action)}", *conditions(predicates)]
     return _rule("app.generated", metadata, body)

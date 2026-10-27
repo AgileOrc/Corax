@@ -15,6 +15,13 @@ log = logging.getLogger("corax.service")
 class RiskRequest(BaseModel):
     user: str = Field(min_length=1, max_length=256)
     object: str = Field(min_length=1, max_length=256)
+    # Sent by OPA so a use of access granted by an appeal is logged for the right rule.
+    action: str | None = Field(default=None, max_length=128)
+
+class UsageRequest(BaseModel):
+    user: str = Field(min_length=1, max_length=256)
+    object: str = Field(min_length=1, max_length=256)
+    action: str | None = Field(default=None, max_length=128)
 
 class RiskResponse(BaseModel):
     risk: float | None
@@ -31,6 +38,10 @@ class AppealRequest(BaseModel):
 class ConfirmRequest(BaseModel):
     candidate: int | None = None
     acknowledge_scope: bool = False
+
+class RevokeRequest(BaseModel):
+    # Also remove the appellant's own exception, not only the rule.
+    exception: bool = False
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
@@ -65,6 +76,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def require_admin(authorization: str | None = Header(default=None)) -> str:
         return app.state.auth.authenticate(authorization)
 
+    def require_user(authorization: str | None = Header(default=None)) -> str:
+        return app.state.auth.authenticate_user(authorization)
+
     @app.exception_handler(AppealError)
     def appeal_error(_: Request, error: AppealError) -> JSONResponse:
         return JSONResponse(status_code=error.status, content={"error": error.message, **error.detail})
@@ -88,12 +102,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 result.risk,
                 " HIGH" if result.high_risk else "",
             )
+        # OPA calls /risk only after the policy allowed the request, so a low risk means it goes through.
+        if not result.high_risk and app.state.appeals is not None:
+            app.state.appeals.record_use(request.user, request.object, request.action, "rule")
         return RiskResponse(
             risk=result.risk,
             high_risk=result.high_risk,
             threshold=model.threshold,
             reason=result.reason,
         )
+
+    # Internal like /risk: OPA calls it when an appeal exception allowed a request, which skips /risk.
+    @app.post("/usage")
+    def usage(request: UsageRequest) -> dict:
+        if app.state.appeals is None:
+            return {"logged": []}
+        return {"logged": app.state.appeals.record_use(request.user, request.object, request.action, "exception")}
 
     @app.post("/corax/appeals", status_code=201)
     def create_appeal(body: AppealRequest, admin: str = Depends(require_admin)) -> dict:
@@ -105,10 +129,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def get_appeal(appeal_id: str, admin: str = Depends(require_admin)) -> dict:
         return appeals().get(appeal_id)
 
+    @app.get("/corax/appeals/{appeal_id}/candidates/{candidate}")
+    def preview_candidate(appeal_id: str, candidate: int, admin: str = Depends(require_admin)) -> dict:
+        return appeals().preview(appeal_id, candidate)
+
     @app.post("/corax/appeals/{appeal_id}/confirm")
     def confirm_appeal(appeal_id: str, body: ConfirmRequest, admin: str = Depends(require_admin)) -> dict:
         record = appeals().confirm(appeal_id, body.candidate, body.acknowledge_scope, admin)
         log.info("appeal %s %s by %s", appeal_id, record["status"], admin)
+        return record
+
+    @app.get("/corax/rules")
+    def list_rules(admin: str = Depends(require_admin)) -> list[dict]:
+        return appeals().rules()
+
+    # The user comes only from the verified token, never from the request, so nobody can read
+    # another user's access.
+    @app.get("/corax/me/access")
+    def my_access(user: str = Depends(require_user)) -> dict:
+        return {"user": user, "resources": appeals().access_of(user)}
+
+    @app.post("/corax/appeals/{appeal_id}/revoke")
+    def revoke_appeal(appeal_id: str, body: RevokeRequest, admin: str = Depends(require_admin)) -> dict:
+        record = appeals().revoke(appeal_id, body.exception, admin)
+        log.info("appeal %s revoked by %s", appeal_id, admin)
         return record
 
     @app.get("/health")
