@@ -81,7 +81,7 @@ Installation and walkthrough: [Getting started](docs/getting-started.md)
 ## Documentation
 
 <!-- TODO: GitBook link -->
-Full documentation: **[GitBook - Corax Documentation]([https://TODO](https://agileorc.gitbook.io/corax-documentation/))** (also in [`docs/`](docs/README.md)).
+Full documentation: **[GitBook - Corax Documentation]([[https://TODO](https://agileorc.gitbook.io/corax-documentation/)])** (also in [`docs/`](docs/README.md)).
 
 ## License
 
