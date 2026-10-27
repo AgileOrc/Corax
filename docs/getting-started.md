@@ -98,18 +98,21 @@ The script prints one block per case, in three sections:
 | 4 (small) | The admin accepts one user's appeal and one of the proposed rules. Corax computes it as small | Applied at once. Another user in the same situation, who never appealed, goes from **403** to **200** |
 | 5 (large, declined) | The admin accepts an appeal and one of the proposed rules. Corax computes it as large | **409**, waits for a second confirmation. The admin declines and keeps only the exact exception, so other pairs stay **403** |
 | 6 (large, approved) | Another appeal whose chosen rule Corax computes as large | **409**, then the admin confirms with `acknowledge_scope`. Another user who never appealed goes from **403** to **200** |
-| 7 (revoke) | The rule file of case 6 is deleted | OPA reloads and that user is **403** again. This is how a rule from an appeal is rolled back |
+| 7 (revoke) | The admin revokes the rule of case 6 through the API | The file is deleted, the revoke is recorded, OPA reloads and that user is **403** again |
+| **D. What the admin sees** | | |
+| | `GET /corax/rules` | Every rule and exception still in effect, in plain language: who approved it, who gained access, and every use of that access |
 
 For every request the script shows the response and OPA's reason, and in section B the threshold and
-the AI risk. For every appeal it shows the three tier indicators against their limits, the tier, the
-`allow` block of the Rego file that was written, and how long OPA took to load it. Case 4 looks like
-this (the ids come from the dummy data):
+the AI risk. For every appeal it shows the accepted rule in plain language, the three tier indicators
+against their limits, the tier, who gained access, how long OPA took to load the rule, how the new access
+was used, and what the user now sees in `GET /corax/me/access`. Case 4 looks like this (the ids come from
+the dummy data, the times are illustrative):
 
 ```
 Case 4 (small): lecturer_head_P0 appeals to access student_P0_05, then the admin accepts
   before  : GET /students/student_P2_14/grades as lecturer_head_P2 -> 403 (denied by policy)
   request : POST /corax/appeals -> 201 Created, appeal-0001, exception written
-            candidate #2: user.member_of = object.member_of AND user holds position_head_of_program
+  admin   : accepts candidate #2: A lecturer may read the grades of a student when the lecturer and the student have the same program and the lecturer is a head of program.
   request : POST /corax/appeals/appeal-0001/confirm {"candidate": 2}
   response: 200 OK, rule_applied
   indicators             value   limit
@@ -117,16 +120,21 @@ Case 4 (small): lecturer_head_P0 appeals to access student_P0_05, then the admin
     new pairs               45      50    ok
     mean risk             0.25    0.50    ok
   tier    : SMALL -> applied without a second confirmation
-  policy  : + appeal-0001-rule.rego
-              allow if {
-                input.action == "read_grades"
-                some n1 in data.corax.graph[input.user.id]["member_of"]
-                n1 in data.corax.graph[input.resource.id]["member_of"]
-                "position_head_of_program" in data.corax.graph[input.user.id]["holds"]
-              }
+  policy  : + appeal-0001-rule.rego (enforced by OPA)
+  access  : 6 people gained access to 45 students.
+              lecturer_head_P0: student_P0_09, student_P0_14, student_P0_15, student_P0_16, student_P0_19
+              lecturer_head_P1: student_P1_02, student_P1_03, student_P1_07, student_P1_11, ...
+              ...
+              and 1 more
   opa     : reloaded in 15 ms (no restart)
   after   : GET /students/student_P2_14/grades as lecturer_head_P2 -> 200 (allowed, risk 0.2195)
+  usage   : Used 1 time by 1 person:
+  usage   : 27 Oct 2026 10:01 UTC  lecturer_head_P2 read the grades of student_P2_14
+  user    : GET /corax/me/access as lecturer_head_P2 -> student_P2_00, student_P2_01, student_P2_04, student_P2_14, student_P2_16, student_P2_19
 ```
+
+The sentences use the optional `labels` in `deploy/demo/data.json`. The Rego file is only named: OPA
+enforces it, the admin reads the sentence.
 
 The ids in `demo.sh` fit `output/dummy` trained as in step 2. Another model may give other risks, so
 check a pair first with `scripts/similar_cases.py` or `scripts/demo_risk.py`.

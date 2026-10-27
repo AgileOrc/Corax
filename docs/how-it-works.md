@@ -5,7 +5,7 @@ handles requests and appeals, and an offline part, which trains the graph model 
 
 Three principles shape it (details in [security](security.md)): policy code is the only source of allow
 decisions, the AI can only turn an allow into a deny, and every rule from an appeal is validated, logged
-and revoked by deleting its file.
+with who gained access and how that access is used, and revoked by deleting its file.
 
 ## Components
 
@@ -15,7 +15,7 @@ and revoked by deleting its file.
 |---|---|---|---|---|
 | Envoy | Proxy in front of the application, asks OPA about every request (`ext_authz`) | | | Clients |
 | OPA | Policy engine: JWT, route, policy, AI risk call | `policy/`, the application's rules, `policies/generated/`, `data.json`, `graph.json` | | Envoy only |
-| `service` | `/risk` for OPA, `/corax/appeals` for admins | Model folder, `data.json` | `policies/generated/`, appeal records | OPA and Envoy only |
+| `service` | `/risk` and `/usage` for OPA, `/corax/*` for admins and users | Model folder, `data.json` | `policies/generated/`, appeal records, access snapshots, usage logs | OPA and Envoy only |
 | `hgnn` | Offline job: trains the model and exports it (`python -m hgnn`) | `nodes.csv`, `edges.csv` | Model folder | Nobody |
 
 ## Request path
@@ -140,20 +140,30 @@ once, then Corax looks for other people in the same situation and proposes a rul
 
 1. The exact exception for the appellant is written at once.
 2. kNN finds the most similar pairs that have no access yet.
-3. Candidate rules are built from the appellant's own facts and returned, narrowest first, with the users
-   and pairs each one would open.
+3. Candidate rules are built from the appellant's own facts and returned, narrowest first, each with a
+   plain-language sentence and the users and pairs it would open. The admin can preview the full list of
+   who would gain access to what (`GET /corax/appeals/{id}/candidates/{n}`).
 
 **Phase 2: the admin accepts one of the proposed rules**, `POST /corax/appeals/{id}/confirm`.
 
 4. The scope of the chosen rule is computed: share of users, new pairs, mean risk.
-5. Tier: a small rule continues. A large one returns 409 until the admin confirms again with
-   `acknowledge_scope`. The admin can also keep only the exception.
+5. Tier: a small rule continues. A large one returns 409, with the users who would gain access, until the
+   admin confirms again with `acknowledge_scope`. The admin can also keep only the exception.
 6. The rule is written as Rego from a fixed template and validated (syntax, whitelist, the application's
    tests, equivalence with the pattern). A rule that fails is not written.
 7. The file is written atomically to `policies/generated/`. OPA, which watches the folder, loads it within
    milliseconds.
+8. A snapshot of who gained access to what is written next to the appeal record.
 
-**Phase 3 (optional): revoke.** Deleting the rule's file removes it, and OPA reloads the same way.
+**Afterwards: every use is logged.** The users in the snapshot reach their new resources without another
+approval. Each time they do, the service logs it: OPA's `/risk` call shows the pair, and for the appellant's
+exception, which skips `/risk`, OPA calls `/usage`. `GET /corax/rules` shows every rule in effect, who
+gained access and how it was used, in plain language. `GET /corax/me/access` shows a user the resources
+they can reach through appeals.
+
+**Phase 3 (optional): revoke**, `POST /corax/appeals/{id}/revoke`. The rule's file is deleted, OPA
+reloads the same way, and who revoked it and when is recorded. Deleting the file by hand also works but
+is not recorded.
 
 Policy files change only on disk. OPA's REST API is never used for writes and is not exposed.
 
@@ -162,6 +172,8 @@ Policy files change only on disk. OPA's REST API is never used for writes and is
 | `<id>-exception.rego` (package `app.exceptions`) | `policies/generated/` | Phase 1 |
 | `<id>-rule.rego` (package `app.generated`) | `policies/generated/` | Phase 2, if the admin accepts a rule |
 | Appeal record with its history (audit log) | `appeals/` | Every step |
+| `<id>-granted.json`: who gained access to what | `appeals/` | Phase 1 (exception) and phase 2 (rule) |
+| `<id>-usage.jsonl`: every use of that access | `appeals/` | Each allowed request it covers |
 
 The steps in detail use this example (illustrative): `alice`, the manager of the sales department, is
 denied `report_105`, a report of that department, because no rule covers managers yet.
@@ -216,7 +228,14 @@ and what share of the similar cases it covers:
   4     28        105   30%  user.member_of = object.member_of
 ```
 
-The admin accepts one (here #2, "a manager may read the reports of their own department") or none (`exception_only`).
+Each candidate also comes as a plain-language sentence for the admin, built from the same predicates as the
+Rego file. With the application's optional `labels`, #2 reads:
+
+```
+An employee may read a report when the employee and the report have the same department and the employee is a manager.
+```
+
+The admin accepts one (here #2) or none (`exception_only`).
 
 ### 4. Tier
 
@@ -272,7 +291,7 @@ Any failure rejects the rule (422) and nothing is written:
    opens and 500 random pairs.
 
 The file is then written atomically, so OPA never loads half a file. Revoking a rule means deleting
-its file.
+its file, through `POST /corax/appeals/{id}/revoke` so that it is recorded.
 
 ## Data and files
 
@@ -284,7 +303,8 @@ its file.
 | `access.json` | `hgnn` | service | Access history, to skip pairs that already have access |
 | `data.json` | Operator | OPA, service | JWT settings, routes, AI address, admin list ([Policy](reference.md#policy)) |
 | `policies/generated/*.rego` | service | OPA | Rules and exceptions from appeals |
-| `appeals/*.json` | service | service, admins | Appeal records |
+| `appeals/*.json` | service | service, admins | Appeal records, access snapshots |
+| `appeals/*-usage.jsonl` | service | service, admins | Uses of access granted by appeals |
 
 After retraining, the new model folder replaces the old one. The service reads it on restart, and OPA
 needs the new `graph.json` in its data folder.
@@ -293,7 +313,10 @@ needs the new `graph.json` in its data folder.
 
 - **Only Envoy is reachable from outside:** OPA, the service and the application sit on the internal
   network.
-- **`/risk` has no authentication:** it must stay reachable by OPA only.
+- **`/risk` and `/usage` have no authentication:** they must stay reachable by OPA only. `/usage` can
+  only add lines to a usage log, never grant access.
+- **A user sees only their own access:** `GET /corax/me/access` takes the user from the verified token,
+  never from the path, query or headers.
 - **Appeals are checked twice:** OPA lets only `config.admin.users` reach `/corax/*`, and the service
   verifies the admin's JWT again with the same key and admin list, so reaching the service directly does not bypass the check.
 - **No write API for policies:** Rules reach OPA only as files in a folder the service writes.

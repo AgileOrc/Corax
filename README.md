@@ -20,7 +20,7 @@
 | 4 | An admin approves one user's appeal and the rule is small | Rule generated, validated and loaded by OPA (policy engine) **without restart**. A different user in the same situation, who never appealed, gets **200** |
 | 5 | An appeal whose rule would be large | **409**: waits for the admin, who declines and keeps only the exact exception |
 | 6 | Another large appeal | The admin approves after reviewing its scope and the rule is applied |
-| 7 | The rule file is deleted | **403** again: a rule is rolled back by deleting its file |
+| 7 | The admin revokes the rule | **403** again: the rule file is deleted and the revoke is recorded |
 
 The demo runs on dummy data, the full walkthrough is in [getting started](docs/getting-started.md#3-end-to-end-demo-with-docker).
 
@@ -46,7 +46,8 @@ AI sits only where its mistakes cannot become a false allow. The risk check runs
 - **Appeals that generalize**: similar cases (kNN on embeddings) --> candidate rules from the appellant's own facts, narrowest first
 - **Blast-radius tiers**: share of users, new pairs and mean risk decide whether a rule applies at once or waits for an admin
 - **Validated Rego**: syntax, attribute whitelist, the application's own tests, and equivalence with the approved pattern
-- **Live reload, instant revoke**: each rule from an appeal is saved as its own `.rego` file, OPA watches that folder and loads a new rule within milliseconds, without a restart. Deleting the file revokes the rule
+- **Live reload, instant revoke**: each rule from an appeal is saved as its own `.rego` file, OPA watches that folder and loads a new rule within milliseconds, without a restart. Revoking deletes the file and records who did it
+- **Transparent access changes**: every rule is shown to admins as a plain sentence, with who gained access when it was accepted and every later use of that access. Users can list the resources they reached through appeals
 - **Domain-agnostic**: any application described as typed nodes and edges in two CSV files
 
 ## Results
@@ -80,10 +81,9 @@ Installation and walkthrough: [Getting started](docs/getting-started.md)
 
 ## Documentation
 
-<!-- TODO: GitBook link -->
 Full documentation: **[GitBook - Corax Documentation](https://agileorc.gitbook.io/corax-documentation)** (also in [`docs/`](docs/README.md)).
 
-## License
+##
 
 Released under the [Apache License 2.0](LICENSE). Copyright 2026 The Corax Authors.
 

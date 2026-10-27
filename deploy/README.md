@@ -10,10 +10,10 @@ the service for the risk, and admins handle appeals through the same gateway.
 | `docker-compose.yml` | Starts Envoy, OPA, the service and the stand-in application. The service and OPA share a volume for the rules from appeals |
 | `envoy.yaml` | Envoy: sends every request to OPA, denies everything if OPA is down, routes `/corax/*` to the service |
 | `service.Dockerfile` | Image of the service, with the `opa` binary it uses to check Rego |
-| `demo/data.json` | Demo configuration: JWT secret, routes, AI address, admin |
+| `demo/data.json` | Demo configuration: JWT secret, routes, AI address, admin, readable labels |
 | `demo/app.rego` | The demo application's own rules |
 | `demo/app_test.rego` | Tests of those rules through Corax's framework |
-| `demo/demo.sh` | The demo: seven cases with curl |
+| `demo/demo.sh` | The demo: seven cases with curl, then what the admin sees |
 
 ## Run
 

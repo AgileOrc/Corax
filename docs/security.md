@@ -10,6 +10,8 @@
 4. Access granted by a rule from an appeal still goes through the risk score. Only the exact pair an
    admin approved skips it.
 5. Policies change only through files. OPA's REST API is not used for writes and is not exposed.
+6. Every access an appeal grants is recorded when it is granted (who gained access to what, approved by
+   whom), every later use of it is logged, and a revoke through the API is recorded.
 
 ## Threats and mitigations
 
@@ -25,6 +27,9 @@
 | Forged identity header (`x-corax-user`) | Ignored by the service. The audit log takes the admin from the verified JWT |
 | Rego injection through ids in an appeal | Ids are written as JSON string literals and appeal ids are checked against a fixed pattern. The whitelist rejects anything else |
 | The AI service is down or slow | The policy decision stands (`allowed without AI check`), never a silent allow beyond policy |
+| Access granted by an appeal is used without anyone noticing | Who gained access is recorded when the admin accepts, every use is logged, and every admin sees both in `GET /corax/rules` |
+| A user reads another user's access list | `GET /corax/me/access` takes the user only from the verified token. There is no user parameter |
+| Forged entries in the usage log through `/usage` | `/usage` is internal like `/risk`. It only appends to a log for access an appeal granted, and never changes a decision |
 
 ## Scope
 
@@ -41,6 +46,9 @@ check that only tightens decisions, appeals that turn an admin's decision into a
 - The risk score is about pairs, not behavior over time. It does not detect fast enumeration by an
   otherwise legitimate user.
 - Hard cases (an object a peer has) are caught less often than random ones. Read [evaluation](evaluation.md).
+- The usage log misses a use when the service is down or slower than `ai.timeout`. A use is logged for
+  the appeal even when the application's own rules would also have allowed it.
+- `GET /corax/me/access` lists only access from appeals, not access from the application's own rules.
 
 ## Future work
 
