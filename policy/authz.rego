@@ -59,6 +59,24 @@ policy_allow if {
 	data.app.generated.allow with input as request
 }
 
+# --- Objects a user may reach ------------------------------------------------
+
+# Of input.objects, those the policy allows input.user to reach with input.action: the application's
+# rules, rules from appeals and exceptions, without the AI check. An application asks it through
+# OPA's API on the internal network to list only what someone may open, so it never shows the
+# titles of the rest. Input: {"user": "...", "action": "...", "resource_type": "...", "objects": [...]}
+allowed_objects contains id if {
+	not startswith(input.action, "corax.")
+	some id in input.objects
+	allowed_by_policy({"user": {"id": input.user}, "action": input.action, "resource": {"type": input.resource_type, "id": id}})
+}
+
+allowed_by_policy(req) if data.app.authz.allow with input as req
+
+allowed_by_policy(req) if data.app.generated.allow with input as req
+
+allowed_by_policy(req) if data.app.exceptions.allow with input as req
+
 # --- AI risk check ---------------------------------------------------------
 
 # Called only when the policy allowed the request, it is not an appeal exception,

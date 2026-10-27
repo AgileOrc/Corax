@@ -342,6 +342,8 @@ test_admin_can_create_read_and_confirm_appeals if {
 		["POST", "/corax/appeals/appeal-0001/confirm"],
 		["POST", "/corax/appeals/appeal-0001/revoke"],
 		["GET", "/corax/rules"],
+		["GET", "/corax/suggestions"],
+		["POST", "/corax/rank"],
 	] {
 		authz.allow with input as envoy_input(method_path[0], method_path[1], alice_token)
 			with data.corax.config as fixture_config
@@ -383,6 +385,8 @@ test_non_admin_cannot_read_rules_preview_or_revoke if {
 		["GET", "/corax/rules"],
 		["GET", "/corax/appeals/appeal-0001/candidates/2"],
 		["POST", "/corax/appeals/appeal-0001/revoke"],
+		["GET", "/corax/suggestions"],
+		["POST", "/corax/rank"],
 	] {
 		not authz.allow with input as envoy_input(method_path[0], method_path[1], bob_token)
 			with data.corax.config as fixture_config
@@ -428,4 +432,33 @@ test_allowed_request_passes_the_user_to_the_upstream if {
 		with data.corax.config as fixture_config
 	authz.result.headers == {} with input as envoy_input("GET", "/corax/appeals/appeal-0001", bob_token)
 		with data.corax.config as fixture_config
+}
+
+# --- Objects a user may reach --------------------------------------------------------------------
+
+objects_query := {"user": "alice", "action": "read_grades", "resource_type": "student", "objects": ["bob", "carol"]}
+
+test_allowed_objects_follow_the_policy if {
+	authz.allowed_objects == {"bob", "carol"} with input as objects_query
+		with data.app.authz.allow as true
+	count(authz.allowed_objects) == 0 with input as objects_query
+		with data.app.authz.allow as false
+}
+
+test_allowed_objects_include_rules_and_exceptions_from_appeals if {
+	authz.allowed_objects == {"bob", "carol"} with input as objects_query
+		with data.app.generated.allow as true
+	authz.allowed_objects == {"bob", "carol"} with input as objects_query
+		with data.app.exceptions.allow as true
+}
+
+test_allowed_objects_never_list_corax_actions if {
+	count(authz.allowed_objects) == 0 with input as object.union(objects_query, {"action": "corax.appeal.read"})
+		with data.app.authz.allow as true
+}
+
+test_allowed_objects_never_call_the_ai if {
+	not authz.risk_response with input as objects_query
+		with data.app.authz.allow as true
+		with http.send as risk_high
 }
