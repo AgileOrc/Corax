@@ -7,6 +7,7 @@
 #   B. allowed by policy, checked by Corax   the AI risk check lets a fitting pair through and denies an odd one
 #   C. appeals                          small rule (applied at once), large rule declined by the admin,
 #                                       large rule approved by the admin, revoke
+#   D. what the admin sees              every rule in effect, who gained access and how it was used
 #
 # Needs only docker and curl: tokens are signed and JSON is read with the Python inside the service container.
 # The ids are those of output/dummy trained as in docs/getting-started.md; another model may
@@ -99,12 +100,16 @@ admin_post() {
 	BODY=$(echo "$response" | sed '$d')
 }
 
+# GET through Envoy with a token; prints the body
+get_as() { curl -s -H "Authorization: Bearer $1" "$URL$2"; }
+
 create_appeal() {
 	admin_post /corax/appeals "{\"user\": \"$1\", \"object\": \"$2\", \"action\": \"read_grades\", \"reason\": \"$3\"}"
 	APPEAL=$(echo "$BODY" | json "data['id']")
 	PICK=$(echo "$BODY" | json "next(c['index'] for c in data['candidates'] if c['pattern'] == '$4')")
 	printf '  request : POST /corax/appeals -> %s, %s, exception written\n' "$(status_text "$CODE")" "$APPEAL"
-	printf '            candidate #%s: %s\n' "$PICK" "$4"
+	printf '  admin   : accepts candidate #%s: %s\n' "$PICK" \
+		"$(echo "$BODY" | json "data['candidates'][$PICK - 1]['description']")"
 }
 
 confirm() {
@@ -112,6 +117,53 @@ confirm() {
 	printf '  request : POST /corax/appeals/%s/confirm %s\n' "$APPEAL" "$1"
 	printf '  response: %s' "$(status_text "$CODE")"
 	if [ "$CODE" = 409 ]; then echo ", needs admin confirmation"; else echo ", $(echo "$BODY" | json "data['status']")"; fi
+}
+
+# What the admin reads, in plain language: who would gain access (from a 409), who gained access and
+# how it was used (from GET /corax/rules)
+VIEW=$(cat <<'PY'
+import json, sys
+data = json.load(sys.stdin)
+part = sys.argv[1]
+
+def people(access, indent="              "):
+    for u in access["by_user"][:5]:
+        print(f"{indent}{u['user']}: {', '.join(u['objects'])}")
+    more = access["users"] - min(len(access["by_user"]), 5)
+    if more > 0:
+        print(f"{indent}and {more} more")
+
+if part == "would":
+    a = data["affected"]
+    print(f"  would give access to {a['users']} people, {a['objects']} students:")
+    people(a)
+    sys.exit()
+
+entries = [e for e in data if part == "all" or (e["appeal"] == sys.argv[2] and e["kind"] == sys.argv[3])]
+for e in entries:
+    lines = e["summary"]
+    used = next(i for i, line in enumerate(lines) if line.startswith(("Used", "Not used")))
+    if part == "granted":
+        print(f"  access  : {lines[2]}")
+        people(e["access"])
+    elif part == "usage":
+        for line in lines[used:]:
+            print(f"  usage   : {line.strip()}")
+    else:
+        print(f"\n  {e['appeal']} ({e['kind']})")
+        for line in lines[:used]:
+            print(f"    {line}")
+        for line in lines[used:]:
+            print(f"    {line.strip()}" if not line.startswith("  ") else f"      {line.strip()}")
+PY
+)
+view() { $COMPOSE exec -T service python -c "$VIEW" "$@"; }
+rules() { get_as "$ADMIN_TOKEN" /corax/rules; }
+
+# the resources a user can reach through appeals, as that user sees them
+my_access() {
+	printf '  user    : GET /corax/me/access as %s -> %s\n' "$1" \
+		"$(get_as "$(token "$1")" /corax/me/access | json "', '.join(data['resources']) or 'nothing'")"
 }
 
 # the three tier indicators of a scope, against the limits the service runs with
@@ -134,12 +186,15 @@ tier = s["tier"].upper()
 print(f"  tier    : {tier} -> " + ("applied without a second confirmation" if tier == "SMALL" else "waiting for the admin"))
 PY
 )
-indicators() { echo "$BODY" | $COMPOSE exec -T service python -c "$INDICATORS"; }
+indicators() {
+	echo "$BODY" | $COMPOSE exec -T service python -c "$INDICATORS"
+	[ "$CODE" != 409 ] || echo "$BODY" | view would
+}
 
-# the allow block of a rule file the service wrote
-show_rule() {
-	printf '  policy  : + %s\n' "$1"
-	$COMPOSE exec -T service sed -n '/^allow if {/,/^}/p' "/policies/generated/$1" | sed 's/\t/  /; s/^/              /'
+# who gained access when the rule was written; the Rego file itself is only named
+show_access() {
+	printf '  policy  : + %s (enforced by OPA)\n' "$1-rule.rego"
+	rules | view granted "$1" rule
 }
 
 # how long OPA took to load the change, from its "Processed file watch event" log line
@@ -191,9 +246,11 @@ create_appeal "$SMALL_APPELLANT" "$SMALL_APPEALED" "head of program reviews grad
 since=$(now)
 confirm "{\"candidate\": $PICK}"
 indicators
-show_rule "$APPEAL-rule.rego"
+show_access "$APPEAL"
 opa_reloaded "$since"
 check "$SMALL_OTHER" "/students/$SMALL_OTHER_STUDENT/grades" after
+rules | view usage "$APPEAL" rule
+my_access "$SMALL_OTHER"
 
 case_title "5 (large, admin declines): $DECLINED_APPELLANT appeals to access $DECLINED_APPEALED"
 create_appeal "$DECLINED_APPELLANT" "$DECLINED_APPEALED" "needs one student's grades" "$SAME_PROGRAM"
@@ -212,14 +269,23 @@ indicators
 echo "  admin   : approves after reviewing the scope"
 since=$(now)
 confirm "{\"candidate\": $PICK, \"acknowledge_scope\": true}"
-show_rule "$APPEAL-rule.rego"
+show_access "$APPEAL"
 opa_reloaded "$since"
 check "$APPROVED_OTHER" "/students/$APPROVED_OTHER_STUDENT/grades" after
+rules | view usage "$APPEAL" rule
 REVOKE=$APPEAL
 
 case_title "7: revoke the rule of case 6"
 since=$(now)
-$COMPOSE exec -T service rm "/policies/generated/$REVOKE-rule.rego"
-printf '  policy  : - %s-rule.rego (deleted)\n' "$REVOKE"
+admin_post "/corax/appeals/$REVOKE/revoke" '{}'
+printf '  request : POST /corax/appeals/%s/revoke -> %s, %s\n' "$REVOKE" "$(status_text "$CODE")" \
+	"$(echo "$BODY" | json "data['status']")"
+printf '  policy  : - %s-rule.rego (deleted, revoke recorded)\n' "$REVOKE"
 opa_reloaded "$since"
 check "$APPROVED_OTHER" "/students/$APPROVED_OTHER_STUDENT/grades" after
+my_access "$APPROVED_OTHER"
+
+section "D. What the admin sees"
+
+echo "  GET /corax/rules: every rule and exception from an appeal that is still in effect"
+rules | view all

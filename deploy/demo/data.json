@@ -28,6 +28,19 @@
         "users": [
           "admin_rina"
         ]
+      },
+      "labels": {
+        "actions": {
+          "read_grades": "read the grades of",
+          "read_profile": "read the profile of"
+        },
+        "relations": {
+          "holds": "is a"
+        },
+        "nodes": {
+          "position_head_of_program": "head of program",
+          "position_lecturer": "lecturer"
+        }
       }
     }
   }
