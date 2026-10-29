@@ -98,9 +98,9 @@ export function NoteDialog({ title, action, onSubmit, onClose }) {
       <form onSubmit={submit}>
         <label htmlFor="note" className="mb-1 block text-[13px] font-medium text-muted">Note for the employee (optional)</label>
         <textarea id="note" className={`${inputClass} min-h-[84px] resize-y`} maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} />
-        <div className="mt-3 flex justify-end gap-2">
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button variant="danger" type="submit" disabled={busy}>{action}</Button>
+        <div className="mt-4 flex justify-end gap-4">
+          <Button variant="ghost" className="font-medium! border-ink/25!" onClick={onClose}>Cancel</Button>
+          <Button type="submit" className="hover:text-accent! hover:bg-transparent! hover:border-accent/80!" disabled={busy}>{action}</Button>
         </div>
       </form>
     </Modal>
@@ -108,7 +108,7 @@ export function NoteDialog({ title, action, onSubmit, onClose }) {
 }
 
 // Takes back the rule of a request (everything: also the employee's own exception), after asking
-export function RevokeButton({ requestId, everything, label, variant = "danger", className = "", onDone }) {
+export function RevokeButton({ requestId, everything, label, variant = "primary", className = "", onDone }) {
   const toast = useToast();
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);

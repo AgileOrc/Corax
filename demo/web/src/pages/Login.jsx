@@ -79,7 +79,7 @@ export default function Login() {
           <p className="my-3 min-h-[1.4em] text-center text-[13px] text-no" role="alert">{error}</p>
           <div className="text-center">
             <button type="submit" disabled={busy}
-                    className="cursor-pointer rounded-xl bg-glass-button px-12 py-2.5 text-lg font-medium transition hover:brightness-150 hover:border hover:border-white disabled:cursor-progress disabled:opacity-55">
+                    className="cursor-pointer rounded-xl border border-transparent bg-accent px-12 py-2.5 text-lg font-medium text-accent-ink transition hover:border-accent/80 hover:bg-transparent hover:text-accent disabled:cursor-progress disabled:opacity-55">
               Sign In
             </button>
           </div>

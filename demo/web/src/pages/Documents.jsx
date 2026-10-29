@@ -140,7 +140,7 @@ function Preview({ id, onClose }) {
             <div className="mt-1 whitespace-pre-wrap rounded-lg border border-line bg-panel-2 p-4">{answer.data.summary}</div>
           </div>
         )
-        : answer.status === 403 ? <Notice kind="no" title="Corax blocked this preview"><p>You cannot preview this document.</p></Notice>
+        : answer.status === 403 ? <Notice kind="accent" title="Corax blocked this preview"><p>You cannot preview this document.</p></Notice>
         : <Notice kind="warn"><p>{errorText(answer)}</p></Notice>}
     </Modal>
   );
