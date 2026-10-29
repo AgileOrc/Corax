@@ -1,7 +1,7 @@
 import { EMPLOYEE_STATUS, LEVEL, STATUS, titled } from "../format.js";
 import { Badge } from "./ui.jsx";
 
-export const LevelBadge = ({ level }) => <Badge kind={LEVEL[level] || ""}>{titled(level)}</Badge>;
+export const LevelBadge = ({ level, className }) => <Badge kind={LEVEL[level] || ""} className={className}>{titled(level)}</Badge>;
 
 // What the employee sees of a request: only whether they can read the document
 export function EmployeeBadge({ status }) {

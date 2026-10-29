@@ -46,7 +46,7 @@ function TopBar({ user, hash, onSignOut }) {
   return (
     <header className="sticky top-0 z-10 flex flex-wrap items-center gap-x-5 border-b border-line px-4 bg-panel sm:flex-nowrap lg:px-8">
       <a href={home(user)} className="whitespace-nowrap py-3 text-base font-semibold text-ink hover:no-underline">Corax Demo</a>
-      {/* the links fill the bar's height, so the line under the open page sits on the bar's bottom edge */}
+      {/* nav */}
       <nav className="order-3 flex w-full gap-1 self-stretch overflow-x-auto sm:order-none sm:w-auto sm:flex-1">
         {(admin ? ADMIN_LINKS : EMPLOYEE_LINKS).map(([href, label]) => (
           <a key={href} href={href}
@@ -114,11 +114,6 @@ export default function App() {
             ? <Page key={hash} params={params} />
             : <Card><p className="py-8 text-center text-muted">Page not found. <a href="#/documents">Documents</a></p></Card>}
         </main>
-        {signedIn && (
-          <footer className="px-6 pb-6 pt-4 text-center text-[13px] text-muted">
-            Every request goes through the gateway: Envoy → OPA (the policy) → the AI risk check. Appeals and generated rules: Corax console on port 8090.
-          </footer>
-        )}
       </div>
     </SessionContext.Provider>
   );

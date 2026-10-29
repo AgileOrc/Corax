@@ -8,16 +8,30 @@ import { useSession } from "../SessionContext.jsx";
 import { useToast } from "../components/Toasts.jsx";
 import { useLoad } from "../useLoad.js";
 
-const Back = () => <a href="#/documents" className="text-[13px]">← Documents</a>;
+const Back = () => (
+  <a href="#/documents" aria-label="Back to documents" title="Back to documents"
+     className="mb-3 inline-block text-ink transition hover:text-accent hover:no-underline">
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="size-8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19 12H5M11 18l-6-6 6-6" />
+    </svg>
+  </a>
+);
 
-// One document: its content when Corax allows it, else a way to ask for access
+// shield icon
+const Shield = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true" className="size-5 text-accent" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z" />
+    <path d="M9 12l2 2 4-4" />
+  </svg>
+);
+
 export default function Document({ params: [id] }) {
   const { user } = useSession();
-  const [opened, setOpened] = useState(null);  // a message after a request that opened it at once
+  const [opened, setOpened] = useState(null);
   const [page, reload] = useLoad(async () => {
     const answer = await api("GET", `/documents/${encodeURIComponent(id)}`);
     if (answer.status !== 403 && answer.status !== 404) return { answer };
-    // the employee's own requests for it, to show one that is still pending
+    
     const mine = user.kind === "employee" ? await api("GET", "/access-requests") : null;
     const requests = mine?.status === 200 ? mine.data.requests.filter((r) => r.document_id === id) : [];
     return { answer, pending: requests.find((r) => r.status === "pending") };
@@ -32,14 +46,11 @@ export default function Document({ params: [id] }) {
       <>
         <Back />
         {opened && <div className="my-3">{opened}</div>}
-        <PageHead title={d.title} actions={<Badge kind="ok" dot>Corax allowed it</Badge>}>
-          <span className="font-mono">{d.id}</span>
+        <PageHead title={<span className="flex flex-wrap items-center gap-5">{d.title} <LevelBadge level={d.classification} className="px-4! text-base!" /></span>} size="text-3xl">
+          <span className="py-2 inline-flex items-center gap-1.5 text-md"><Shield /> Checked by Corax</span>
         </PageHead>
         <div className="grid grid-cols-1 items-start gap-10 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-          <div>
-            <h2 className="text-lg font-semibold">Content</h2>
-            <div className="mt-3.5 whitespace-pre-wrap rounded-lg border border-line bg-panel-2 p-4">{d.content}</div>
-          </div>
+          <div className="whitespace-pre-wrap rounded-lg border border-line bg-panel-2 p-4">{d.content}</div>
           <div><Details doc={d} /></div>
         </div>
       </>
@@ -75,7 +86,6 @@ export default function Document({ params: [id] }) {
 
 function Details({ doc }) {
   const rows = [
-    ["Classification", <LevelBadge level={doc.classification} />],
     ["Department", titled(doc.department)],
     ["Projects", (doc.projects || []).map(project).join(", ")],
     ["Stored at", place(doc.site, doc.region)],

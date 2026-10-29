@@ -23,9 +23,9 @@ const BADGE = {
   "": "bg-code text-muted",
 };
 
-export function Badge({ kind = "", dot = false, children }) {
+export function Badge({ kind = "", dot = false, className = "", children }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ${BADGE[kind] ?? BADGE[""]}`}>
+    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold ${BADGE[kind] ?? BADGE[""]} ${className}`}>
       {dot && <span className="size-1.5 rounded-full bg-current" />}
       {children}
     </span>
@@ -47,11 +47,11 @@ export function Notice({ kind = "info", title, children }) {
   );
 }
 
-export function PageHead({ title, children, actions }) {
+export function PageHead({ title, children, actions, size = "text-[22px]" }) {
   return (
     <div className="mb-4 flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 className="text-[22px] font-semibold">{title}</h1>
+        <h1 className={`${size} font-semibold`}>{title}</h1>
         {children && <p className="mt-1 text-muted">{children}</p>}
       </div>
       {actions}
