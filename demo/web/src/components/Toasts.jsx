@@ -19,7 +19,7 @@ export function ToastProvider({ children }) {
       {/* above the light and dark switch in the corner */}
       <div className="fixed bottom-18 right-4 z-30 grid gap-2" aria-live="polite">
         {toasts.map((t) => (
-          <div key={t.id} className={`max-w-[360px] rounded-lg px-3.5 py-2.5 text-sm shadow-card ${t.kind === "no" ? "bg-no text-white" : "bg-ink text-panel"}`}>
+          <div key={t.id} className="max-w-[360px] rounded-lg bg-accent px-3.5 py-2.5 text-sm text-accent-ink shadow-card">
             {t.text}
           </div>
         ))}

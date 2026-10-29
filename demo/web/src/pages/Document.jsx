@@ -1,33 +1,27 @@
 import { useState } from "react";
 
 import { api } from "../api.js";
-import { Badge, Button, inputClass, Notice, PageHead } from "../components/ui.jsx";
+import { BackLink, Button, inputClass, Notice, PageHead } from "../components/ui.jsx";
 import { LevelBadge } from "../components/badges.jsx";
-import { ago, errorText, place, project, titled } from "../format.js";
+import { ago, errorText, place, project, ref, titled } from "../format.js";
 import { useSession } from "../SessionContext.jsx";
 import { useToast } from "../components/Toasts.jsx";
 import { useLoad } from "../useLoad.js";
 
-const Back = () => (
-  <a href="#/documents" aria-label="Back to documents" title="Back to documents"
-     className="mb-3 inline-block text-ink transition hover:text-accent hover:no-underline">
-    <svg viewBox="0 0 24 24" aria-hidden="true" className="size-8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M19 12H5M11 18l-6-6 6-6" />
-    </svg>
-  </a>
-);
+const Back = () => <BackLink href="#/documents" label="Back to documents" />;
 
 // shield icon
-const Shield = () => (
+const Shield = ({ denied = false }) => (
   <svg viewBox="0 0 24 24" aria-hidden="true" className="size-5 text-accent" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6l7-3z" />
-    <path d="M9 12l2 2 4-4" />
+    <path d={denied ? "M10 10l4 4M14 10l-4 4" : "M9 12l2 2 4-4"} />
   </svg>
 );
 
 export default function Document({ params: [id] }) {
   const { user } = useSession();
   const [opened, setOpened] = useState(null);
+  const [sent, setSent] = useState(false);
   const [page, reload] = useLoad(async () => {
     const answer = await api("GET", `/documents/${encodeURIComponent(id)}`);
     if (answer.status !== 403 && answer.status !== 404) return { answer };
@@ -46,7 +40,7 @@ export default function Document({ params: [id] }) {
       <>
         <Back />
         {opened && <div className="my-3">{opened}</div>}
-        <PageHead title={<span className="flex flex-wrap items-center gap-5">{d.title} <LevelBadge level={d.classification} className="px-4! text-base!" /></span>} size="text-3xl">
+        <PageHead title={<span className="flex flex-wrap items-center gap-5">{d.title} <LevelBadge level={d.classification} className="px-4! text-base!" /></span>}>
           <span className="py-2 inline-flex items-center gap-1.5 text-md"><Shield /> Checked by Corax</span>
         </PageHead>
         <div className="grid grid-cols-1 items-start gap-10 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
@@ -63,22 +57,24 @@ export default function Document({ params: [id] }) {
   return (
     <>
       <Back />
-      <PageHead title="No access" actions={<Badge kind="no" dot>Denied by Corax</Badge>} />
+      <PageHead title="No access">
+        <span className="py-2 inline-flex items-center gap-1.5"><Shield denied /> Denied by Corax</span>
+      </PageHead>
       <div>
-        <Notice kind="no" title="You do not have access to this document">
-          <p>If someone shared this link with you, you can ask an admin for access. Need documents of a whole unit instead? <a href="#/units">Ask for a unit</a>.</p>
+        <Notice kind="accent" title="You do not have access to this document">
+          {pending
+            ? <p>Your request {ref("document", pending.id)}, sent {ago(pending.created_at)}, is waiting for an admin. Follow it under <a href="#/requests">My requests</a>.</p>
+            : sent
+              ? <p>Your request is waiting for an admin. Follow it under <a href="#/requests">My requests</a>.</p>
+              : <p>If someone shared this link with you, you can ask an admin for access.</p>}
         </Notice>
-        <div className="mt-4">
-          {user.kind !== "employee"
-            ? <p className="text-muted">Admins do not read documents here; they review the employees' requests.</p>
-            : pending
-              ? (
-                <Notice kind="info" title="Your request is pending">
-                  <p>Request #{pending.id}, sent {ago(pending.created_at)}. You can follow it under <a href="#/requests">My requests</a>.</p>
-                </Notice>
-              )
-              : <AskForAccess id={id} onOpened={(message) => { setOpened(message); reload(); }} />}
-        </div>
+        {!pending && !sent && (
+          <div className="mt-4">
+            {user.kind !== "employee"
+              ? <p className="text-muted">Admins do not read documents here; they review the employees' requests.</p>
+              : <AskForAccess id={id} onSent={() => { setSent(true); reload(); }} onOpened={(message) => { setOpened(message); reload(); }} />}
+          </div>
+        )}
       </div>
     </>
   );
@@ -104,11 +100,10 @@ function Details({ doc }) {
   );
 }
 
-function AskForAccess({ id, onOpened }) {
+function AskForAccess({ id, onSent, onOpened }) {
   const toast = useToast();
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
-  const [sent, setSent] = useState(false);
 
   async function submit(event) {
     event.preventDefault();
@@ -122,18 +117,11 @@ function AskForAccess({ id, onOpened }) {
     // granted at once: show the document itself. The employee only needs to know it opens, not the
     // rule behind it (that is for admins, under Access granted).
     const status = answer.data.status;
-    if (status === "granted" || status === "generalised") onOpened(<Notice kind="ok" title="Access granted"><p>You can read this document now.</p></Notice>);
-    else if (status === "already_granted") onOpened(<Notice kind="info" title="You can read it already" />);
-    else setSent(true);
+    if (status === "granted" || status === "generalised") onOpened(<Notice kind="accent" title="Access granted"><p>You can read this document now.</p></Notice>);
+    else if (status === "already_granted") onOpened(<Notice kind="accent" title="You can read it already" />);
+    else onSent();
   }
 
-  if (sent) {
-    return (
-      <Notice kind="ok" title="Request sent">
-        <p>Your request is waiting for an admin. Follow it under <a href="#/requests">My requests</a>.</p>
-      </Notice>
-    );
-  }
   return (
     <form onSubmit={submit}>
       <label htmlFor="reason" className="mb-1 block text-[13px] font-medium text-muted">Why do you need it?</label>

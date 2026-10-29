@@ -58,19 +58,19 @@ export default function Documents() {
     <>
       {fresh > 0 && (
         <div className="mb-4">
-          <Notice kind="ok" title={`${fresh} new document${fresh === 1 ? " was" : "s were"} shared with you`}>
+          <Notice kind="accent" title={`${fresh} new document${fresh === 1 ? " was" : "s were"} shared with you`}>
             <p>An admin approved access for people in your situation. <a href="#/shared">See them under Shared with me</a>.</p>
           </Notice>
         </div>
       )}
-      <PageHead title="Documents">
+      <PageHead title={admin ? "Documents list" : "Documents"}>
         {admin
-          ? "Every document, to give access. Reading documents is for employees."
-          : <>The documents you can open. Need something else? Ask for it from its link, or <a href="#/units">ask for a unit</a>.</>}
+          ? "Every document in the store. Only employees can open them."
+          : <>The documents you can open. Need something else? Ask for it from its link, or ask for a unit under <a href="#/requests">My requests</a>.</>}
       </PageHead>
       <div>
         <form role="search" onSubmit={(e) => e.preventDefault()}
-              className="grid grid-cols-1 items-end gap-2.5 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+              className="grid grid-cols-1 items-end gap-2.5 sm:grid-cols-2 lg:w-3/4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
           <div className="sm:col-span-2 lg:col-span-1">
             <Label htmlFor="q">Search</Label>
             <input id="q" className={inputClass} placeholder="Title or id, e.g. D057" value={filters.q} onChange={set("q")} />
@@ -102,7 +102,7 @@ export default function Documents() {
           : (
             <ul>
               {documents.map((d) => (
-                <DocRow key={d.id} doc={d} tags={d.in_my_projects ? ["Your project"] : []}
+                <DocRow key={d.id} doc={d} tags={d.in_my_projects ? ["Your project"] : []} link={!admin}
                         actions={admin ? null : <>
                           <Button variant="ghost" size="sm" onClick={() => setPreview(d.id)} className="font-medium!">Preview</Button>
                           <Button size="sm" href={`#/documents/${d.id}`} className="hover:text-accent! hover:bg-transparent! hover:border-accent/80!">Open</Button>
@@ -130,15 +130,15 @@ function Preview({ id, onClose }) {
     <Modal title="Preview" onClose={onClose}>
       {!answer ? <p className="text-muted">Asking Corax…</p>
         : answer.status === 200 ? (
-          <>
+          <div className="grid gap-3">
             <h3 className="font-semibold">{answer.data.title}</h3>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[13px] text-muted">
+            <div className="flex flex-wrap items-center gap-2 text-[13px] text-muted">
               <LevelBadge level={answer.data.classification} />
               <span>{titled(answer.data.department)}</span>
               <span>Stored at {place(answer.data.site, answer.data.region)}</span>
             </div>
-            <div className="mt-3.5 whitespace-pre-wrap rounded-lg border border-line bg-panel-2 p-4">{answer.data.summary}</div>
-          </>
+            <div className="mt-1 whitespace-pre-wrap rounded-lg border border-line bg-panel-2 p-4">{answer.data.summary}</div>
+          </div>
         )
         : answer.status === 403 ? <Notice kind="no" title="Corax blocked this preview"><p>You cannot preview this document.</p></Notice>
         : <Notice kind="warn"><p>{errorText(answer)}</p></Notice>}

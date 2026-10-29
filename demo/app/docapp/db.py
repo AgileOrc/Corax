@@ -251,7 +251,8 @@ def create_unit_request(connection: sqlite3.Connection, user_id: str, unit: str,
 
 
 def unit_requests(connection: sqlite3.Connection, user_id: str | None = None, request_id: int | None = None) -> list[dict]:
-    sql = """SELECT q.*, u.name AS user_name, u.role AS user_role, u.department AS user_department
+    sql = """SELECT q.*, u.name AS user_name, u.role AS user_role, u.department AS user_department,
+                    u.site AS user_site, u.region AS user_region
              FROM unit_requests q JOIN users u ON u.id = q.user_id WHERE 1 = 1"""
     args: list = []
     if user_id:

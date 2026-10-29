@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { ago, errorText, initials, inWords, place, project, ruleText, short, titled } from "./format.js";
+import { ago, errorText, initials, inWords, place, project, ref, ruleText, short, titled } from "./format.js";
 
 test("ids and names read as people would write them", () => {
   assert.equal(short("employee_E037"), "E037");
@@ -11,6 +11,8 @@ test("ids and names read as people would write them", () => {
   assert.equal(initials("Mia Chen"), "MC");
   assert.equal(place("paris", "emea"), "Paris (EMEA)");
   assert.equal(place("", "emea"), "");
+  assert.equal(ref("document", 1), "REQ-DOC-0001");
+  assert.equal(ref("unit", 12), "REQ-UNIT-0012");
 });
 
 test("ago counts minutes and hours", () => {

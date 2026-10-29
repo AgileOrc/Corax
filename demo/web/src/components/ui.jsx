@@ -2,7 +2,7 @@
 
 const BUTTON = {
   primary: "bg-accent text-accent-ink border-transparent",
-  ghost: "bg-transparent text-ink border-line hover:bg-panel-2",
+  ghost: "bg-ink/5 text-ink border-line hover:bg-ink/10",
   danger: "bg-no text-white border-transparent",
   ok: "bg-ok text-white border-transparent",
 };
@@ -36,9 +36,9 @@ export function Card({ className = "", children }) {
   return <section className={`rounded-xl border border-line bg-card p-5 shadow-card backdrop-blur-md ${className}`}>{children}</section>;
 }
 
-// A colored box with a short message: kind ok, warn, no or info
+// A colored box with a short message: kind ok, warn, no, info or accent
 export function Notice({ kind = "info", title, children }) {
-  const tone = { ok: "bg-ok-soft", warn: "bg-warn-soft", no: "bg-no-soft", info: "bg-info-soft" }[kind];
+  const tone = { ok: "bg-ok-soft", warn: "bg-warn-soft", no: "bg-no-soft", info: "bg-info-soft", accent: "bg-accent-soft", glass: "border border-white/10 bg-glass/45 backdrop-blur-xl" }[kind];
   return (
     <div className={`rounded-lg px-4 py-3.5 ${tone}`}>
       {title && <h3 className="mb-1 font-semibold">{title}</h3>}
@@ -47,7 +47,16 @@ export function Notice({ kind = "info", title, children }) {
   );
 }
 
-export function PageHead({ title, children, actions, size = "text-[22px]" }) {
+// back arrow above a page title
+export const BackLink = ({ href, label }) => (
+  <a href={href} aria-label={label} title={label} className="mb-3 inline-block text-ink transition hover:text-accent hover:no-underline">
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="size-8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19 12H5M11 18l-6-6 6-6" />
+    </svg>
+  </a>
+);
+
+export function PageHead({ title, children, actions, size = "text-3xl" }) {
   return (
     <div className="mb-4 flex flex-wrap items-end justify-between gap-4">
       <div>

@@ -3,17 +3,18 @@ import { useEffect, useState } from "react";
 import { api } from "../../api.js";
 import { LevelBadge, StatusBadge } from "../../components/badges.jsx";
 import { Empty } from "../../components/DocRow.jsx";
-import { NoteDialog, PeopleList, Person, RevokeButton, ScopeIndicators, TierBadge } from "../../components/admin.jsx";
+import { Asker, NoteDialog, PeopleList, RevokeButton, ScopeIndicators, TierBadge } from "../../components/admin.jsx";
 import { Modal } from "../../components/Modal.jsx";
 import { useToast } from "../../components/Toasts.jsx";
-import { Button, Notice, PageHead } from "../../components/ui.jsx";
+import { BackLink, Button, Notice, PageHead } from "../../components/ui.jsx";
 import { loadDirectory } from "../../directory.js";
-import { setFlash, takeFlash } from "../../flash.js";
-import { ago, errorText, inWords, place, ruleText, STATUS, titled } from "../../format.js";
+import { takeFlash } from "../../flash.js";
+import { ago, errorText, inWords, place, ref, ruleText, STATUS, titled } from "../../format.js";
 import { useLoad } from "../../useLoad.js";
 import { useApprove, useReject } from "./Requests.jsx";
 
-const Back = () => <a href="#/admin" className="text-[13px]">← Access requests</a>;
+const HOVER = "hover:text-accent! hover:bg-transparent! hover:border-accent/80!";
+const Back = () =><BackLink href="#/admin" label="Back to requests" />;
 
 // One access request: the decision on it, and after approval, Corax's suggestions for people in the
 // same situation
@@ -31,30 +32,29 @@ export default function Request({ params: [id] }) {
     <>
       <Back />
       {flash && <div className="my-3">{flash}</div>}
-      <PageHead title={`Request #${r.id}`}>
-        <span className="flex flex-wrap items-center gap-1.5">
-          <StatusBadge status={r.status} /> sent {ago(r.created_at)}{r.decided_by ? `, decided by ${r.decided_by} ${ago(r.decided_at)}` : ""}
-        </span>
+      <PageHead title={<span className="flex flex-wrap items-baseline gap-3">{ref("document", r.id)} <span className="text-base font-normal text-muted">sent {ago(r.created_at)}</span></span>}>
+        {(r.decided_by || !["pending", "granted"].includes(r.status)) && (
+          <span className="flex flex-wrap items-center gap-1.5">
+            {!["pending", "granted"].includes(r.status) && <StatusBadge status={r.status} />}
+            {r.decided_by && <>decided by <b className="font-semibold text-ink">{r.decided_by}</b> {ago(r.decided_at)}</>}
+          </span>
+        )}
       </PageHead>
-      <div className="grid grid-cols-1 items-start gap-10 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <section className="space-y-3">
-          <h2 className="text-lg font-semibold">Decision</h2>
-          <Decision r={r} onChange={changed} />
-        </section>
-        <section className="space-y-3">
-          <Person r={r} />
-          <div>
-            <span className="text-[13px] text-muted">asks for</span>
-            <div><b>{r.document_title}</b> <span className="font-mono text-[13px] text-muted">{r.document_id}</span></div>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[13px] text-muted">
-              <LevelBadge level={r.document_classification} />
-              <span>{titled(r.document_department)}</span>
-              <span>Stored at {place(r.document_site, r.document_region)}</span>
-            </div>
-          </div>
-          {r.reason ? <p className="text-sm">“{r.reason}”</p> : <p className="text-[13px] text-muted">No reason given.</p>}
-        </section>
-      </div>
+      {/* request */}
+      <section className="mb-8 mt-8 space-y-2">
+        <div className="flex flex-wrap items-center gap-2 text-lg">
+          <b>{r.document_title}</b>
+          <span className="text-sm text-muted">| {titled(r.document_department)} - stored at {place(r.document_site, r.document_region)}</span>
+          <LevelBadge level={r.document_classification} />
+        </div>
+        <Asker r={r} label={r.requested_by && r.requested_by !== r.user_id ? `given by ${r.requested_by} to` : "requested by"} />
+        {r.reason ? <p className="whitespace-pre-wrap text-sm">“{r.reason}”</p> : <p className="text-[13px] text-muted">No reason given.</p>}
+      </section>
+      {/* decision */}
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">Decision</h2>
+        <Decision r={r} onChange={changed} />
+      </section>
     </>
   );
 }
@@ -68,37 +68,37 @@ function Decision({ r, onChange }) {
   if (r.status === "pending") {
     return (
       <div className="flex gap-2">
-        <Button variant="ok" onClick={approve}>Approve</Button>
+        <Button onClick={approve}>Approve</Button>
         <Button variant="ghost" onClick={() => setRejecting(true)}>Reject</Button>
-        {rejecting && <NoteDialog title={`Reject request #${r.id}`} action="Reject" onClose={() => setRejecting(false)} onSubmit={reject} />}
+        {rejecting && <NoteDialog title={`Reject request ${ref("document", r.id)}`} action="Reject" onClose={() => setRejecting(false)} onSubmit={reject} />}
       </div>
     );
   }
   if (r.status === "granted") return <Suggestions r={r} onChange={onChange} />;
   if (r.status === "generalised") {
     return (
-      <Notice kind="ok" title={<span className="flex flex-wrap items-center gap-2">Access given to people in the same situation <TierBadge tier={r.tier} /></span>}>
+      <Notice kind="glass" title={<span className="flex flex-wrap items-center gap-2">Rule applied <TierBadge tier={r.tier} /></span>}>
         <p>{ruleText(r, r.rule_pattern)}</p>
-        <p className="mt-1">People in the same situation can read these documents now. Unusual requests from them can still be blocked.</p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button variant="ghost" size="sm" href="#/rules">Who gained access</Button>
-          <RevokeButton requestId={r.id} everything={false} label="Take back from others" onDone={onChange} />
-          <RevokeButton requestId={r.id} everything label="Take back from everyone" variant="ghost" onDone={onChange} />
+        <p className="mt-1 text-muted">Matching employees now have access. Corax still checks each of their requests.</p>
+        <div className="mt-4 flex flex-wrap gap-5">
+          <Button size="sm" href="#/rules" className={HOVER}>View access</Button>
+          <RevokeButton requestId={r.id} everything={false} label="Revoke rule" variant="ghost" className="font-medium! border-ink/25!" onDone={onChange} />
+          <RevokeButton requestId={r.id} everything label="Revoke all" variant="ghost" className="font-medium! border-ink/25!" onDone={onChange} />
         </div>
       </Notice>
     );
   }
   if (["exception_only", "rule_revoked"].includes(r.status) && r.appeal_id) {
     return (
-      <Notice kind="info" title={label}>
+      <Notice kind="glass" title={label}>
         <p>{explained}</p>
         {r.note && <p className="mt-1">Note: {r.note}</p>}
-        <div className="mt-3"><RevokeButton requestId={r.id} everything label="Revoke the employee's access too" onDone={onChange} /></div>
+        <div className="mt-4"><RevokeButton requestId={r.id} everything label="Revoke employee access" variant="ghost" className="font-medium! border-ink/25!" onDone={onChange} /></div>
       </Notice>
     );
   }
   return (
-    <Notice kind={kind === "no" ? "no" : "info"} title={label}>
+    <Notice kind={kind === "no" ? "no" : "glass"} title={label}>
       <p>{explained}</p>
       {r.note && <p className="mt-1">Note: {r.note}</p>}
     </Notice>
@@ -118,9 +118,6 @@ function Suggestions({ r, onChange }) {
     const answer = await api("POST", `/admin/access-requests/${r.id}/confirm`, { candidate, acknowledge_scope: acknowledge });
     setBusy(false);
     if (answer.status === 200) {
-      const appeal = answer.data.appeal;
-      setFlash(appeal.status === "rule_applied" ? <RuleNotice appeal={appeal} />
-        : <Notice kind="ok" title="Only the exception was kept"><p>The employee has this one document; no rule for others.</p></Notice>);
       onChange();
       return;
     }
@@ -136,47 +133,52 @@ function Suggestions({ r, onChange }) {
 
   return (
     <div className="space-y-3">
-      {r.note && <Notice kind="info"><p>{r.note}.</p></Notice>}
-      <p className="text-muted">The employee can read the document now. To give the same access to people in the same situation, choose one of Corax's suggestions below, narrowest first.</p>
+      {r.note && <Notice kind="accent"><p>{r.note}.</p></Notice>}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-muted">Optionally extend this access to people in the same situation.</p>
+        <Button variant="ghost" className="font-medium!" disabled={busy} onClick={() => confirm(null, false)}>Only this person</Button>
+      </div>
       {candidates.length === 0 ? <p className="text-muted">Corax has no suggestion for people in the same situation.</p> : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-muted">
-                <th className="px-1.5 py-2">#</th><th className="px-1.5 py-2">Suggestion</th>
-                <th className="px-1.5 py-2 text-right">People</th><th className="px-1.5 py-2 text-right">New accesses</th>
-                <th className="px-1.5 py-2 text-right">How unusual (0–1)</th><th className="px-1.5 py-2">Reach</th>
-                <th className="px-1.5 py-2 text-right">Like this request</th><th />
+                <th className="px-3 py-2">#</th><th className="px-3 py-2">Rule</th>
+                <th className="w-px whitespace-nowrap px-5 py-2 text-right" title="People who would gain access">People</th>
+                <th className="w-px whitespace-nowrap px-5 py-2 text-right" title="New accesses: one person, one document">Grants</th>
+                <th className="w-px whitespace-nowrap px-5 py-2 text-right" title="Mean risk score, from 0 (usual) to 1 (unusual)">Risk</th>
+                <th className="w-px whitespace-nowrap px-5 py-2" title="Narrow: few people, applied at once. Broad: needs your confirmation">Reach</th>
+                <th className="w-px whitespace-nowrap px-5 py-2 text-right" title="Of the requests most like this one, how many the rule also covers">Match</th><th className="w-px" />
               </tr>
             </thead>
             <tbody>
               {candidates.map((c) => (
                 <tr key={c.index} className="border-b border-line align-top">
-                  <td className="px-1.5 py-2.5">{c.index}</td>
-                  <td className="px-1.5 py-2.5">
-                    <div>{c.description || inWords(c.predicates)}</div>
-                    <Button variant="ghost" size="sm" className="mt-1.5" onClick={() => setWho(c.index)}>Who would gain access</Button>
+                  <td className="px-3 py-5">{c.index}</td>
+                  <td className="px-3 py-5">{c.description || inWords(c.predicates)}</td>
+                  <td className="w-px whitespace-nowrap px-5 py-5 text-right tabular-nums">{c.scope?.users ?? c.users ?? "?"}</td>
+                  <td className="w-px whitespace-nowrap px-5 py-5 text-right tabular-nums">{c.scope ? c.scope.pairs : `${c.estimated ? "~" : ""}${c.pairs}`}</td>
+                  <td className="w-px whitespace-nowrap px-5 py-5 text-right tabular-nums">{c.scope?.mean_risk == null ? "–" : Number(c.scope.mean_risk).toFixed(2)}</td>
+                  <td className="w-px whitespace-nowrap px-5 py-5"><TierBadge tier={c.scope?.tier} /></td>
+                  <td className="w-px whitespace-nowrap px-5 py-5 text-right tabular-nums">{c.similar ? `${c.similar.covered}/${c.similar.of}` : `${Math.round((c.support || 0) * 100)}%`}</td>
+                  <td className="w-px py-5 pl-5">
+                    <div className="flex gap-3 whitespace-nowrap">
+                      <Button variant="ghost" size="sm" className="font-medium!" onClick={() => setWho(c.index)}>Who gains</Button>
+                      <Button size="sm" className="hover:text-accent! hover:bg-transparent! hover:border-accent/80!" disabled={busy} onClick={() => confirm(c.index, false)}>Give access</Button>
+                    </div>
                   </td>
-                  <td className="px-1.5 py-2.5 text-right tabular-nums">{c.scope?.users ?? c.users ?? "?"}</td>
-                  <td className="px-1.5 py-2.5 text-right tabular-nums">{c.scope ? c.scope.pairs : `${c.estimated ? "~" : ""}${c.pairs}`}</td>
-                  <td className="px-1.5 py-2.5 text-right tabular-nums">{c.scope?.mean_risk == null ? "–" : Number(c.scope.mean_risk).toFixed(2)}</td>
-                  <td className="px-1.5 py-2.5"><TierBadge tier={c.scope?.tier} /></td>
-                  <td className="whitespace-nowrap px-1.5 py-2.5 text-right tabular-nums">{c.similar ? `${c.similar.covered} of ${c.similar.of}` : `${Math.round((c.support || 0) * 100)}%`}</td>
-                  <td className="px-1.5 py-2.5"><Button size="sm" disabled={busy} onClick={() => confirm(c.index, false)}>Give access</Button></td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <p className="mt-2 text-[13px] text-muted">Like this request: of the requests most like this one, how many the suggestion would also cover.</p>
         </div>
       )}
-      <div className="flex justify-end"><Button variant="ghost" disabled={busy} onClick={() => confirm(null, false)}>Only this person</Button></div>
       {result?.failed && (
         <Notice kind="no" title="Corax could not apply this suggestion"><p>A safety check failed, so nothing changed. The employee keeps this one document.</p></Notice>
       )}
       {result?.large && (
         <Notice kind="warn" title="This reaches many people: please confirm">
-          <p>Suggestion #{result.candidate} would give access to many people, or to unusual access, so it needs a second look:</p>
+          <p>Rule #{result.candidate} would give access to many people, or to unusual access, so it needs a second look:</p>
           {result.large.description && <p className="mt-1">{result.large.description}</p>}
           <ScopeIndicators scope={result.large.scope} />
           {result.large.affected && <div className="mt-3"><PeopleList access={result.large.affected} /></div>}
@@ -191,20 +193,6 @@ function Suggestions({ r, onChange }) {
   );
 }
 
-// The notice after the admin gave a suggestion to people in the same situation
-function RuleNotice({ appeal }) {
-  const scope = appeal.chosen.scope;
-  return (
-    <Notice kind="ok" title={<span className="flex flex-wrap items-center gap-2">Access given to people in the same situation <TierBadge tier={scope.tier} /></span>}>
-      <p>{scope.tier === "small" ? "Done right away, because it reaches only a few people." : "Done after you confirmed it."} It works right away.</p>
-      {appeal.chosen.description && <p className="mt-1">{appeal.chosen.description}</p>}
-      <ScopeIndicators scope={scope} />
-      <p className="mt-3"><a href="#/rules">See who gained access and how it is used</a></p>
-      <p className="mt-1 text-[13px] text-muted">Checked automatically before it took effect.</p>
-    </Notice>
-  );
-}
-
 // Who a suggestion would give access to, before anything is written
 function WhoWouldGain({ appealId, candidate, onClose }) {
   const [answer, setAnswer] = useState(null);
@@ -216,7 +204,7 @@ function WhoWouldGain({ appealId, candidate, onClose }) {
   }, [appealId, candidate]);
 
   return (
-    <Modal title={`Suggestion #${candidate}`} onClose={onClose}>
+    <Modal title={`Rule #${candidate}`} onClose={onClose}>
       {!answer ? <p className="text-muted">Asking Corax…</p>
         : answer.status !== 200 ? <Notice kind="warn"><p>{errorText(answer)}</p></Notice>
         : (
@@ -225,7 +213,6 @@ function WhoWouldGain({ appealId, candidate, onClose }) {
             <ScopeIndicators scope={answer.data.scope} />
             <h3 className="mb-1 mt-4 font-semibold">Who would get access</h3>
             <PeopleList access={answer.data.affected} limit={50} />
-            <p className="mt-3 text-[13px] text-muted">Nothing is written until you apply it.</p>
           </div>
         )}
     </Modal>

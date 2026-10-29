@@ -10,7 +10,7 @@ import { Modal } from "./Modal.jsx";
 import { useToast } from "./Toasts.jsx";
 import { Badge, Button, inputClass } from "./ui.jsx";
 
-export const TierBadge = ({ tier }) => tier ? <Badge kind={tier === "small" ? "ok" : "warn"}>{tier === "small" ? "few people" : "many people"}</Badge> : null;
+export const TierBadge = ({ tier }) => tier ? <Badge kind={tier === "small" ? "ok" : "warn"}>{tier === "small" ? "Narrow" : "Broad"}</Badge> : null;
 
 export function Person({ r }) {
   return (
@@ -25,30 +25,45 @@ export function Person({ r }) {
 }
 
 // The document of a request, with its details
-export function RequestedDocument({ r, label = "asks for" }) {
+export function RequestedDocument({ r, label = "asks for", onOpen }) {
   return (
     <div>
       <span className="text-[13px] text-muted">{label}</span>{" "}
-      <b>{r.document_title}</b> <span className="text-[13px] text-muted">{short(r.document_id)}</span>{" "}
+      {onOpen ? <OpenTitle onClick={onOpen}>{r.document_title}</OpenTitle> : <b>{r.document_title}</b>} <span className="text-[13px] text-muted">{short(r.document_id)}</span>{" "}
       <LevelBadge level={r.document_classification} />{" "}
       <span className="text-[13px] text-muted">{titled(r.document_department)} · stored at {place(r.document_site, r.document_region)}</span>
     </div>
   );
 }
 
+// who asked: name (id) | role - department | place
+export function Asker({ r, label = "requested by" }) {
+  return (
+    <p className="mt-1 text-sm text-muted">
+      {label} <b className="font-semibold text-ink">{r.user_name}</b> ({short(r.user_id)}) | {titled(r.user_role)} - {titled(r.user_department)}
+      {r.user_site ? ` | ${place(r.user_site, r.user_region)}` : ""}
+    </p>
+  );
+}
+
+// a title that opens the details
+export const OpenTitle = ({ onClick, children }) => (
+  <button type="button" onClick={onClick} className="cursor-pointer text-left font-bold text-ink underline-offset-4 hover:underline">{children}</button>
+);
+
 export function ScopeIndicators({ scope }) {
   const items = [
-    [scope.users, "people"],
-    [scope.pairs, "new accesses (one person, one document)"],
-    [scope.mean_risk == null ? "–" : Number(scope.mean_risk).toFixed(2), "how unusual, on average (0 normal, 1 very unusual)"],
+    [scope.users, "People", "People who would gain access"],
+    [scope.pairs, "Grants", "New accesses: one person, one document"],
+    [scope.mean_risk == null ? "–" : Number(scope.mean_risk).toFixed(2), "Risk", "Mean risk score, from 0 (usual) to 1 (unusual)"],
   ];
   return (
-    <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-      {items.map(([value, label]) => (
-        <div key={label} className="rounded-lg border border-line px-3 py-2.5">
-          <b className="block text-xl tabular-nums">{value}</b>
-          <span className="text-xs text-muted">{label}</span>
-        </div>
+    <div className="mt-3 flex flex-wrap gap-2">
+      {items.map(([value, label, hint]) => (
+        <span key={label} title={hint} className="inline-flex items-baseline gap-1.5 rounded-full bg-accent-soft px-3.5 py-1.5">
+          <b className="text-lg tabular-nums text-accent">{value}</b>
+          <span className="text-[13px] text-muted">{label}</span>
+        </span>
       ))}
     </div>
   );
@@ -93,7 +108,7 @@ export function NoteDialog({ title, action, onSubmit, onClose }) {
 }
 
 // Takes back the rule of a request (everything: also the employee's own exception), after asking
-export function RevokeButton({ requestId, everything, label, variant = "danger", onDone }) {
+export function RevokeButton({ requestId, everything, label, variant = "danger", className = "", onDone }) {
   const toast = useToast();
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -110,13 +125,13 @@ export function RevokeButton({ requestId, everything, label, variant = "danger",
 
   return (
     <>
-      <Button variant={variant} size="sm" onClick={() => setAsking(true)}>{label}</Button>
+      <Button variant={variant} size="sm" className={className} onClick={() => setAsking(true)}>{label}</Button>
       {asking && (
-        <Modal title="Take access back?" onClose={() => setAsking(false)}>
-          <p>Take back {what}? It stops working at once.</p>
-          <div className="mt-4 flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setAsking(false)}>Cancel</Button>
-            <Button variant="danger" onClick={revoke} disabled={busy}>Take back</Button>
+        <Modal title="Revoke access?" onClose={() => setAsking(false)}>
+          <p>Revoke {what}? This takes effect immediately.</p>
+          <div className="mt-4 flex justify-end gap-4">
+            <Button variant="ghost" className="font-medium! border-ink/25!" onClick={() => setAsking(false)}>Cancel</Button>
+            <Button className="hover:text-accent! hover:bg-transparent! hover:border-accent/80!" onClick={revoke} disabled={busy}>Revoke</Button>
           </div>
         </Modal>
       )}
@@ -127,7 +142,7 @@ export function RevokeButton({ requestId, everything, label, variant = "danger",
 // A row of a list on the admin's pages: the details on the left, the actions on the right
 export function Row({ children, actions }) {
   return (
-    <article className="grid grid-cols-1 gap-3.5 border-b border-line px-1 py-4 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_auto]">
+    <article className="grid grid-cols-1 gap-3.5 border-b border-line px-1 py-4 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
       <div className="space-y-2">{children}</div>
       {actions && <div className="flex flex-row flex-wrap items-start gap-1.5 sm:flex-col sm:items-stretch">{actions}</div>}
     </article>

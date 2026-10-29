@@ -1,9 +1,9 @@
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
-import { Button } from "./ui.jsx";
 
 // A dialog over the page: Escape or a click on the backdrop closes it.
-export function Modal({ title, onClose, children }) {
+export function Modal({ title, onClose, children, width = "max-w-[660px]" }) {
   const box = useRef(null);
   useEffect(() => {
     const key = (event) => { if (event.key === "Escape") onClose(); };
@@ -12,16 +12,22 @@ export function Modal({ title, onClose, children }) {
     return () => window.removeEventListener("keydown", key);
   }, [onClose]);
 
-  return (
-    <div className="fixed inset-0 z-20 grid place-items-center bg-black/45 p-4" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+  // on <body>, so a blurred box around the button cannot trap or clip it
+  return createPortal(
+    <div className="fixed inset-0 z-20 grid place-items-center p-4" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div ref={box} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title}
-           className="w-full max-w-[560px] rounded-xl bg-panel p-5 shadow-2xl">
-        <div className="mb-2.5 flex items-start justify-between gap-3">
-          <h2 className="text-lg font-semibold">{title}</h2>
-          <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close">Close</Button>
+           className={`flex w-full ${width} max-h-[90vh] min-h-[226px] flex-col justify-center-safe overflow-y-auto rounded-xl border border-white/10 bg-glass/45 px-10 py-8 shadow-2xl backdrop-blur-xl`}>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-xl font-semibold">{title}</h2>
+          <button type="button" onClick={onClose} aria-label="Close" title="Close" className="cursor-pointer text-ink transition hover:text-accent">
+            <svg viewBox="0 0 24 24" aria-hidden="true" className="size-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

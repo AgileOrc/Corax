@@ -295,10 +295,12 @@ def create_app(settings: Settings | None = None, corax: Corax | None = None, opa
             if employee is None or document is None:
                 continue
             found.append({**s, "user_name": employee["name"], "user_role": employee["role"],
-                          "user_department": employee["department"], "document_title": document["title"],
-                          "document_department": document["department"],
+                          "user_department": employee["department"], "user_site": employee["site"],
+                          "user_region": employee["region"], "document_title": document["title"],
+                          "document_department": document["department"], "document_site": document["site"],
+                          "document_region": document["region"],
                           "document_classification": document["classification"]})  # fmt: skip
-        return {"suggestions": found[:20]}
+        return {"suggestions": found}
 
     @app.post("/admin/suggestions/dismiss")
     def dismiss_suggestion(body: Dismiss, admin: Admin, c: Connection) -> dict:

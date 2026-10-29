@@ -9,7 +9,9 @@ export const initials = (name) => String(name ?? "?").split(/\s+/).map((w) => w[
 // a site and its region: "Paris (EMEA)"
 export const place = (site, region) => site ? `${titled(site)} (${String(region || "").toUpperCase()})` : "";
 
-export const LEVELS = ["public", "internal", "confidential"];
+export const ref = (kind, id) => `REQ-${kind === "unit" ? "UNIT" : "DOC"}-${String(id).padStart(4, "0")}`;  // REQ-DOC-0001, REQ-UNIT-0001
+
+export const LEVELS =["public", "internal", "confidential"];
 export const LEVEL = { public: "ok", internal: "info", confidential: "no" };
 
 export function ago(iso, now = Date.now()) {

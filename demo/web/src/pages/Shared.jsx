@@ -37,7 +37,6 @@ export default function Shared() {
             ))}
           </ul>
         )}
-        <p className="mt-2 text-[13px] text-muted">Documents your own projects and role already give you are not listed here.</p>
       </div>
     </>
   );

@@ -1,9 +1,9 @@
 import { api } from "../../api.js";
 import { Empty } from "../../components/DocRow.jsx";
 import { PeopleList, RevokeButton, Row } from "../../components/admin.jsx";
-import { Badge, Button, Notice, PageHead } from "../../components/ui.jsx";
+import { Badge, Notice, PageHead } from "../../components/ui.jsx";
 import { documentName, loadDirectory, personName } from "../../directory.js";
-import { errorText } from "../../format.js";
+import { errorText, ref } from "../../format.js";
 import { useLoad } from "../../useLoad.js";
 
 // Every rule and exception from an approved request still in effect: who approved it, who gained
@@ -14,7 +14,7 @@ export default function Rules() {
     return { rules, requests };
   });
   const head = (
-    <PageHead title="Access granted" actions={<Button variant="ghost" onClick={reload}>Refresh</Button>}>
+    <PageHead title="Access granted">
       Every rule and exception an admin approved that is still in effect: who gained access, and every time that access was used since. Revoking deletes the rule and records who did it.
     </PageHead>
   );
@@ -31,12 +31,12 @@ export default function Rules() {
         const used = e.summary.find((line) => line.startsWith("Used") || line.startsWith("Not used"));
         return (
           <Row key={`${e.appeal}/${e.kind}`}
-               actions={r ? <RevokeButton requestId={r.id} everything={e.kind !== "rule"} label="Revoke" onDone={reload} /> : null}>
+               actions={r ? <RevokeButton requestId={r.id} everything={e.kind !== "rule"} label="Revoke" variant="primary" className="hover:text-accent! hover:bg-transparent! hover:border-accent/80!" onDone={reload} /> : null}>
             <h3 className="flex flex-wrap items-center gap-2 font-semibold">
               {e.description} <Badge kind={e.kind === "rule" ? "accent" : ""}>{e.kind === "rule" ? "for a group" : "one person"}</Badge>
             </h3>
             <p className="text-[13px] text-muted">
-              {e.summary[1]}{r && <> · request <a href={`#/admin/request/${r.id}`}>#{r.id}</a></>} · {e.appeal}
+              {e.summary[1]}{r && <> · request <a href={`#/admin/request/${r.id}`}>{ref("document", r.id)}</a></>} · {e.appeal}
             </p>
             {e.file_missing && <Notice kind="warn"><p>This access was removed outside Corax, so nobody recorded who did it.</p></Notice>}
             <div>
