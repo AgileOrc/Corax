@@ -21,7 +21,8 @@ def test_accounts_and_documents_from_the_graph(client, settings, seed_dir):
 def test_passwords_are_hashed(settings, client, password):
     with db.session(settings.database) as c:
         stored = [row[0] for row in c.execute("SELECT password FROM users")]
-    assert all(p.startswith("pbkdf2_sha256$") and password not in p for p in stored)
+    # no part is the password itself; a short password like 123456 may still turn up inside a random salt or hash
+    assert all(p.startswith("pbkdf2_sha256$") and password not in p.split("$") for p in stored)
     assert len(set(stored)) == len(stored)  # one salt per account
 
 

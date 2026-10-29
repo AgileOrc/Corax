@@ -264,10 +264,11 @@ def test_the_admin_lists_employees_without_passwords(client, auth):
 def test_give_access_lists_only_documents_the_employee_cannot_open(client, auth, opa):
     opa.allowed = {"document_D001"}
 
-    documents = client.get("/admin/employees/employee_E002/documents", headers=auth("admin_01")).json()["documents"]
+    answer = client.get("/admin/employees/employee_E002/documents", headers=auth("admin_01")).json()
 
-    ids = [d["id"] for d in documents]
+    ids = [d["id"] for d in answer["documents"]]
     assert "document_D001" not in ids and "document_D002" in ids and len(ids) == 159
+    assert [d["id"] for d in answer["open"]] == ["document_D001"]
     assert opa.calls[-1][:3] == ("employee_E002", "read", "document")
 
 
@@ -278,3 +279,24 @@ def test_documents_to_give_are_for_admins_and_known_employees(client, auth, opa)
 
     opa.error = OpaError("OPA is not reachable")
     assert client.get("/admin/employees/employee_E002/documents", headers=auth("admin_01")).status_code == 503
+
+
+def test_give_access_by_document_lists_only_employees_who_cannot_open_it(client, auth, opa):
+    # only E002 may open D001: everyone else is worth giving it to
+    opa.allowed_objects = lambda user, action, resource_type, objects: set(objects) if user == "employee_E002" else set()
+
+    answer = client.get("/admin/documents/document_D001/employees", headers=auth("admin_01")).json()
+
+    ids = [e["id"] for e in answer["employees"]]
+    assert "employee_E002" not in ids and "employee_E003" in ids
+    assert [e["id"] for e in answer["with_access"]] == ["employee_E002"]
+    assert all("password" not in e for e in answer["employees"] + answer["with_access"])
+
+
+def test_employees_to_give_are_for_admins_and_known_documents(client, auth, opa):
+    assert client.get("/admin/documents/document_D001/employees", headers=auth("e002")).status_code == 403
+    assert client.get("/admin/documents/document_X999/employees", headers=auth("admin_01")).status_code == 404
+    from docapp.opa import OpaError
+
+    opa.error = OpaError("OPA is not reachable")
+    assert client.get("/admin/documents/document_D001/employees", headers=auth("admin_01")).status_code == 503

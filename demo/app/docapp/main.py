@@ -247,7 +247,19 @@ def create_app(settings: Settings | None = None, corax: Corax | None = None, opa
             allowed = opa.allowed_objects(user_id, "read", "document", [d["id"] for d in found])
         except OpaError as error:
             raise HTTPException(503, f"cannot check which documents this employee may open: {error}") from error
-        return {"documents": [d for d in found if d["id"] not in allowed]}
+        return {"documents": [d for d in found if d["id"] not in allowed], "open": [d for d in found if d["id"] in allowed]}
+
+    @app.get("/admin/documents/{document_id}/employees")
+    def employees_to_give(document_id: str, _: Admin, c: Connection) -> dict:
+        """The employees who cannot open this document yet, and those who can: one policy question per employee, as above."""
+        if db.document(c, document_id) is None:
+            raise HTTPException(404, f"unknown document {document_id!r}")
+        try:
+            can = {e["id"] for e in db.employees(c) if document_id in opa.allowed_objects(e["id"], "read", "document", [document_id])}
+        except OpaError as error:
+            raise HTTPException(503, f"cannot check which employees may open this document: {error}") from error
+        employees = db.employees(c)
+        return {"employees": [e for e in employees if e["id"] not in can], "with_access": [e for e in employees if e["id"] in can]}
 
     def give(c: sqlite3.Connection, admin: dict, token: str, user: str, document: str, reason: str | None) -> tuple[dict, dict]:
         """A request that starts approved: Corax writes the exact exception and proposes rules for

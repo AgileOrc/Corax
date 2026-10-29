@@ -20,6 +20,7 @@
         {"method": "POST", "path": "/admin/access-requests/:request/revoke", "action": "access.review", "resource_type": "access_request"},
         {"method": "GET", "path": "/admin/employees", "action": "access.review", "resource_type": "access_request"},
         {"method": "GET", "path": "/admin/employees/:employee/documents", "action": "access.review", "resource_type": "access_request"},
+        {"method": "GET", "path": "/admin/documents/:document/employees", "action": "access.review", "resource_type": "access_request"},
         {"method": "POST", "path": "/admin/grants", "action": "access.review", "resource_type": "access_request"},
         {"method": "GET", "path": "/admin/suggestions", "action": "access.review", "resource_type": "access_request"},
         {"method": "POST", "path": "/admin/suggestions/dismiss", "action": "access.review", "resource_type": "access_request"},
