@@ -1,0 +1,72 @@
+{
+  "corax": {
+    "config": {
+      "jwt": {
+        "secret": "corax-demo-secret-not-for-production",
+        "iss": "corax-demo",
+        "aud": "corax-demo-api"
+      },
+      "routes": [
+        {"method": "GET", "path": "/documents/:id", "action": "read", "resource_type": "document"},
+        {"method": "GET", "path": "/documents/:id/summary", "action": "read_summary", "resource_type": "document"},
+        {"method": "GET", "path": "/documents", "action": "documents.list", "resource_type": "catalog"},
+        {"method": "GET", "path": "/me", "action": "profile.read", "resource_type": "profile"},
+        {"method": "POST", "path": "/access-requests/:document", "action": "access.request", "resource_type": "access_request"},
+        {"method": "GET", "path": "/access-requests", "action": "access.list_own", "resource_type": "access_request"},
+        {"method": "GET", "path": "/admin/access-requests", "action": "access.review", "resource_type": "access_request"},
+        {"method": "POST", "path": "/admin/access-requests/:request/approve", "action": "access.review", "resource_type": "access_request"},
+        {"method": "POST", "path": "/admin/access-requests/:request/confirm", "action": "access.review", "resource_type": "access_request"},
+        {"method": "POST", "path": "/admin/access-requests/:request/reject", "action": "access.review", "resource_type": "access_request"},
+        {"method": "POST", "path": "/admin/access-requests/:request/revoke", "action": "access.review", "resource_type": "access_request"},
+        {"method": "GET", "path": "/admin/employees", "action": "access.review", "resource_type": "access_request"},
+        {"method": "GET", "path": "/admin/employees/:employee/documents", "action": "access.review", "resource_type": "access_request"},
+        {"method": "POST", "path": "/admin/grants", "action": "access.review", "resource_type": "access_request"},
+        {"method": "GET", "path": "/admin/suggestions", "action": "access.review", "resource_type": "access_request"},
+        {"method": "POST", "path": "/admin/suggestions/dismiss", "action": "access.review", "resource_type": "access_request"},
+        {"method": "GET", "path": "/units", "action": "units.list", "resource_type": "unit"},
+        {"method": "POST", "path": "/unit-requests", "action": "access.request", "resource_type": "unit_request"},
+        {"method": "GET", "path": "/unit-requests", "action": "access.list_own", "resource_type": "unit_request"},
+        {"method": "GET", "path": "/admin/unit-requests", "action": "access.review", "resource_type": "unit_request"},
+        {"method": "GET", "path": "/admin/unit-requests/:request/documents", "action": "access.review", "resource_type": "unit_request"},
+        {"method": "POST", "path": "/admin/unit-requests/:request/grant", "action": "access.review", "resource_type": "unit_request"},
+        {"method": "POST", "path": "/admin/unit-requests/:request/reject", "action": "access.review", "resource_type": "unit_request"}
+      ],
+      "ai": {
+        "url": "http://service:8000",
+        "timeout": "200ms"
+      },
+      "admin": {
+        "users": ["admin_01"]
+      },
+      "labels": {
+        "relations": {
+          "holds": "is",
+          "classified_as": "is classified as",
+          "stored_in": "is stored in",
+          "stored_at": "is stored at",
+          "based_in": "is based in",
+          "located_in": "is located in",
+          "works_on": "works on",
+          "belongs_to": "belongs to"
+        },
+        "nodes": {
+          "role_engineer": "an engineer",
+          "role_analyst": "an analyst",
+          "role_manager": "a manager",
+          "role_coordinator": "a coordinator",
+          "role_security_officer": "a security officer",
+          "role_facility_manager": "a facility manager",
+          "classification_public": "public",
+          "classification_internal": "internal",
+          "classification_confidential": "confidential",
+          "region_apac": "APAC",
+          "region_emea": "EMEA",
+          "site_frankfurt": "Frankfurt",
+          "site_london": "London",
+          "site_singapore": "Singapore",
+          "site_sydney": "Sydney"
+        }
+      }
+    }
+  }
+}

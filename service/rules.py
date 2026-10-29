@@ -55,6 +55,7 @@ def render_rule(
     action: str,
     predicates: Sequence[Predicate],
     custom: dict | None = None,
+    resource_type: str | None = None,
     description: str | None = None,
 ) -> str:
     check_appeal_id(appeal_id)
@@ -66,11 +67,13 @@ def render_rule(
         "description": description or pattern,
         "custom": {"appeal_id": appeal_id, **extra, **(custom or {})},
     }
-    body = [f"input.action == {literal(action)}", *conditions(predicates)]
+    body = [f"input.action == {literal(action)}", *type_check(resource_type), *conditions(predicates)]
     return _rule("app.generated", metadata, body)
 
 
-def render_exception(appeal_id: str, user: str, action: str, obj: str) -> str:
+def render_exception(
+    appeal_id: str, user: str, action: str, obj: str, resource_type: str | None = None
+) -> str:
     check_appeal_id(appeal_id)
     metadata = {
         "title": f"{appeal_id} exception",
@@ -80,6 +83,13 @@ def render_exception(appeal_id: str, user: str, action: str, obj: str) -> str:
     body = [
         f"input.user.id == {literal(user)}",
         f"input.resource.id == {literal(obj)}",
+        *type_check(resource_type),
         f"input.action == {literal(action)}",
     ]
     return _rule("app.exceptions", metadata, body)
+
+
+# A rule holds only for the kind of resource it was mined from (the route's resource_type): another
+# route with the same action, or an id that also names a node of another type, must not match it.
+def type_check(resource_type: str | None) -> list[str]:
+    return [] if resource_type is None else [f"input.resource.type == {literal(resource_type)}"]

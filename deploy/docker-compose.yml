@@ -1,15 +1,48 @@
-name: corax-demo
+# Corax in front of the demo application (a document app). Before the first start, prepare the
+# enterprise graph and the HGNN (output/gateway), with Python or in a container:
+#   python scripts/demo_gateway.py prepare
+#   docker compose -f deploy/docker-compose.yml run --rm prepare
+# Ports: gateway 8080 and console 8090, or CORAX_GATEWAY_PORT / CORAX_CONSOLE_PORT.
+#
+#   browser -> envoy:8080 -> web (the frontend's files: "/" and "/assets/", public)
+#   client  -> envoy:8080 -> opa (policy/ + demo/policy + demo/data.json + graph, AI check)
+#                         -> app (login, documents, access requests) or service (/corax/appeals...)
+#
+# The app seeds its SQLite database (volume "appdata") from the enterprise graph on the first start;
+# every account's password is CORAX_DEMO_PASSWORD (default corax-demo). It calls /corax/appeals
+# through Envoy, only with the token of the admin who approves an access request: the app has no
+# Corax account of its own.
+#
+# The service writes exceptions and generated rules into the "runtime" volume; OPA loads it with
+# --watch, so an approved appeal becomes policy without a restart. The service verifies the admin's
+# JWT itself with the same demo/data.json that OPA loads.
+name: corax
 
 services:
-  envoy:
-    image: envoyproxy/envoy:v1.39.4
-    # the access log (OPA's reason, AI risk) is written every 200 ms instead of every 10 s
-    command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--file-flush-interval-msec", "200"]
-    ports:
-      - "127.0.0.1:8080:8080"
+  service:
+    build:
+      context: ..
+      dockerfile: deploy/service.Dockerfile
+    environment:
+      CORAX_MODEL_DIR: /model
+      CORAX_CONFIG: /config/data.json
+      OPA_PATH: /usr/local/bin/opa
+      POLICY_DIR: /policy/app
+      GENERATED_DIR: /runtime/generated
+      APPEALS_DIR: /state/appeals
+      # a rule is "small" up to 6% of the model's 86 employees (5 people), the limit the demo was built
+      # around; the service's default is 40%, which suits a whole organization, not this walkthrough
+      AUTO_APPLY_MAX_USER_SHARE: "0.06"
     volumes:
-      - ./envoy.yaml:/etc/envoy/envoy.yaml:ro
-    depends_on: [opa, service, upstream]
+      - ../output/gateway/hgnn:/model:ro
+      - ../demo/data.json:/config/data.json:ro
+      - ../demo/policy:/policy/app:ro
+      - runtime:/runtime
+      - state:/state
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 2s
+      retries: 30
 
   opa:
     image: openpolicyagent/opa:1.21.2-envoy
@@ -18,45 +51,107 @@ services:
       - --server
       - --addr=:8181
       - --watch
-      - --log-level=info
-      - --set=plugins.envoy_ext_authz_grpc.addr=:9191
-      - --set=plugins.envoy_ext_authz_grpc.path=corax/authz/result
-      - /corax
-      - /app
-      - /data
-      - /policies/generated
+      - --ignore=*_test.rego
+      - --ignore=.*
+      - --config-file=/config/opa.yaml
+      - /policy/corax
+      - /policy/app
+      - /policy/data
+      - /runtime/generated
     volumes:
-      - ../policy/request.rego:/corax/request.rego:ro
-      - ../policy/authz.rego:/corax/authz.rego:ro
-      - ./demo/app.rego:/app/app.rego:ro
-      - ./demo/data.json:/data/data.json:ro
-      - ${CORAX_MODEL:-../output/dummy}/graph.json:/data/corax/graph/data.json:ro
-      - generated:/policies/generated:ro
-    depends_on: [service]
+      # Corax's framework: the two files only (policy/ also holds an example config and tests)
+      - ../policy/request.rego:/policy/corax/request.rego:ro
+      - ../policy/authz.rego:/policy/corax/authz.rego:ro
+      - ../demo/policy:/policy/app:ro
+      # data.corax.config, and data.corax.graph from the folder the file sits in
+      - ../demo/data.json:/policy/data/data.json:ro
+      - ../output/gateway/hgnn/graph.json:/policy/data/corax/graph/data.json:ro
+      - ./opa.yaml:/config/opa.yaml:ro
+      - runtime:/runtime:ro
+    depends_on:
+      service:
+        condition: service_healthy
 
-  service:
+  app:
+    build: ../demo/app
+    environment:
+      DATABASE: /data/docapp.db
+      SEED_DIR: /seed
+      CORAX_CONFIG: /config/data.json
+      CORAX_GATEWAY: http://envoy:8080
+      # the catalog lists only what the policy lets each employee open (OPA's API, internal network)
+      OPA_URL: http://opa:8181
+      DEMO_PASSWORD: ${CORAX_DEMO_PASSWORD:-corax-demo}
+    volumes:
+      - ../output/gateway/data:/seed:ro
+      - ../demo/data.json:/config/data.json:ro
+      - appdata:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 2s
+      retries: 30
+
+  # The web frontend (demo/web): static files served by nginx, reached through Envoy at
+  # http://localhost:8080 (the same origin as the API, so no CORS)
+  web:
+    build: ../demo/web
+    volumes:
+      # the sign-in page's demo accounts: the people of scripts/demo_office.py prepare's cases (role and
+      # department only); demo_gateway.py prepare writes none, and the page lists its own
+      - ../output/gateway/data/accounts.json:/usr/share/nginx/html/assets/accounts.json:ro
+
+  envoy:
+    image: envoyproxy/envoy:v1.38.7
+    # the access log is written every 200 ms instead of every 10 s
+    command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "warn", "--file-flush-interval-msec", "200"]
+    volumes:
+      - ./envoy.yaml:/etc/envoy/envoy.yaml:ro
+    ports:
+      - "${CORAX_GATEWAY_PORT:-8080}:8080"
+    depends_on: [opa, app, web]
+
+  # Corax's demo console (http://localhost:8090): pick who you are, send requests through the
+  # gateway, handle appeals as the admin. It plays the identity provider of the demo (signs the tokens).
+  console:
+    build: ../demo/console
+    volumes:
+      - ../demo/data.json:/config/data.json:ro
+      - ../output/gateway/data/demo.json:/config/demo.json:ro
+      - runtime:/runtime:ro
+      - state:/state:ro
+    ports:
+      - "${CORAX_CONSOLE_PORT:-8090}:8000"
+    depends_on: [envoy]
+
+  # One-off tools (profile "tools": "up" does not start them), so the demo needs nothing but Docker:
+  #   docker compose -f deploy/docker-compose.yml run --rm prepare   graph and HGNN -> output/gateway
+  #   docker compose -f deploy/docker-compose.yml run --rm demo      the demo as a log (demo_backend.py)
+  # demo reads Envoy's and OPA's logs and the service's files with the docker CLI: it mounts the
+  # Docker socket, which gives it control of Docker on this machine (a local demo tool only).
+  prepare:
+    profiles: [tools]
     build:
       context: ..
-      dockerfile: deploy/service.Dockerfile
-    environment:
-      CORAX_MODEL_DIR: /model
-      CORAX_CONFIG: /config/data.json
-      GENERATED_DIR: /policies/generated
-      APPEALS_DIR: /appeals
-      OPA_PATH: /usr/local/bin/opa
-      AUTO_APPLY_MAX_USER_SHARE: "0.5"
-      AUTO_APPLY_MAX_PAIRS: "100"
-      AUTO_APPLY_MAX_MEAN_RISK: "0.5"
+      dockerfile: deploy/tools.Dockerfile
+    image: corax-tools
     volumes:
-      - ${CORAX_MODEL:-../output/dummy}:/model:ro
-      - ./demo/data.json:/config/data.json:ro
-      - generated:/policies/generated
-      - appeals:/appeals
+      - ../output:/corax/output
+    command: ["scripts/demo_gateway.py", "prepare"]
 
-  upstream:
-    image: hashicorp/http-echo:1.0.0
-    command: ["-listen=:5678", "-text={\"campus_api\": \"ok\"}"]
+  demo:
+    profiles: [tools]
+    build:
+      context: ..
+      dockerfile: deploy/tools.Dockerfile
+    image: corax-tools
+    environment:
+      CORAX_DEMO_PASSWORD: ${CORAX_DEMO_PASSWORD:-corax-demo}
+    volumes:
+      - ../output:/corax/output:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: ["scripts/demo_backend.py", "--gateway", "http://envoy:8080"]
 
 volumes:
-  generated:
-  appeals:
+  runtime:
+  state:
+  appdata:

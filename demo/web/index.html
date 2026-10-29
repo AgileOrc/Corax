@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Document Hub</title>
+<meta name="description" content="The demo document app, protected by Corax">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/styles.css">
+<script src="/assets/app.js" defer></script>
+</head>
+<body>
+<header class="topbar" id="topbar" hidden>
+  <a class="brand" href="#/documents">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h8l4 4v16H6z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 2v4h4M9 12h6M9 16h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    <span>Document Hub</span>
+  </a>
+  <nav class="nav" id="nav"></nav>
+  <div class="who">
+    <span class="who-name" id="whoName"></span>
+    <button class="button ghost small" id="signOut" type="button">Sign out</button>
+  </div>
+</header>
+<main id="app" class="app" tabindex="-1"></main>
+<footer class="footer" id="footer" hidden>
+  Every request goes through the gateway: Envoy → OPA (the policy) → the AI risk check. Appeals and generated rules: Corax console on port 8090.
+</footer>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+</body>
+</html>

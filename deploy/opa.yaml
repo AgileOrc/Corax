@@ -1,0 +1,9 @@
+# OPA with the Envoy plugin: Envoy asks on port 9191, the answer is data.corax.authz.result
+# (allowed, plus the reason and AI risk as dynamic metadata for Envoy's logs).
+plugins:
+  envoy_ext_authz_grpc:
+    addr: :9191
+    path: corax/authz/result
+# every decision (input and result) is written to OPA's output: docker-compose logs opa
+decision_logs:
+  console: true

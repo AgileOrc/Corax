@@ -29,10 +29,13 @@ Corax keeps **policy code as the source of truth** and uses AI only where it hel
 | `service/` | FastAPI: `/risk` for OPA, `/corax/appeals` for admins. Needs only numpy, no torch |
 | `hgnn/` | Trains the heterogeneous GraphSAGE model and exports one embedding per node (`python -m hgnn`) |
 | `scripts/` | Dataset preparation, evaluation, and the demo scripts |
+| `demo/` | The demo application Corax protects: a document app, its rules, its web frontend and the Corax console |
+| `deploy/` | Docker Compose, Envoy and OPA settings that run Corax in front of the demo application |
 
 ## Table of Contents
 
 * [Getting started](getting-started.md): install, train the model once, run the demo with or without Docker.
+* [Running the demo](demo.md): the document app step by step, as employees and as the admin.
 * [How Corax works](how-it-works.md): components, the request path, the risk score and the appeal path.
 * [Security](security.md): invariants, threats and mitigations, scope, limitations and future work.
 * [Evaluation](evaluation.md): results on Amazon Access Samples and the Xu & Stoller ABAC policies, and the references.

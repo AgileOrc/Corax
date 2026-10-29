@@ -12,13 +12,13 @@ from graph import GraphData
 from patterns import Predicate, candidates, opened_pairs
 from risk import RiskModel
 from rules import APPEAL_ID, render_exception, render_rule
-from similar import SimilarityIndex
+from similar import SimilarityIndex, closest
 from suggest import score, suggested
 from tier import assess
 from validate import Report, expected_decisions, validate, write_atomic
 
 ID_NUMBER = re.compile(r"^appeal-(\d+)$")
-# How many users a 409 response lists. The preview endpoint lists all of them.
+# How many users a 409 response lists. The candidate preview lists all of them.
 AFFECTED_IN_409 = 20
 # Above this many (user, object) pairs, suggestions are asked for one user at a time.
 MAX_SUGGESTION_PAIRS = 2_000_000
@@ -38,6 +38,8 @@ class AppealService:
         self.graph = graph
         self.index = SimilarityIndex(model)
         self.settings = settings
+        # generated files only hold for this kind of resource (rules.type_check)
+        self.resource_type = settings.resource_type or model.metadata["target_edge_type"][2]
         self.lock = threading.Lock()
         self.user_type, _, self.object_type = model.metadata["target_edge_type"]
         self.relation_types = graph.relation_types()
@@ -57,30 +59,28 @@ class AppealService:
     def labels(self) -> Labels:
         return Labels.load(self.settings.corax_config)
 
-    def create(self, user: str, obj: str, action: str, reason: str | None, by: str | None) -> dict:
+    def create(
+        self, user: str, obj: str, action: str, reason: str | None, by: str | None, dry_run: bool = False
+    ) -> dict:
         if user not in self.model.users:
             raise AppealError(404, f"unknown user {user!r}")
         if obj not in self.model.objects:
             raise AppealError(404, f"unknown object {obj!r}")
+        if self.graph.has_access(user, obj):
+            raise AppealError(409, f"{user} already has access to {obj}: there is nothing to appeal")
+        if dry_run:
+            return self.preview(user, obj, action, reason)
 
         with self.lock:
             appeal_id = self._next_id()
-            exception = render_exception(appeal_id, user, action, obj)
+            exception = render_exception(appeal_id, user, action, obj, self.resource_type)
             report = self._validate(exception, "app.exceptions", action, self._exception_pairs(user, obj))
             if not report.ok:
                 raise AppealError(422, "the exception failed validation", {"validation": _checks(report)})
             exception_file = write_atomic(self.settings.generated_dir, f"{appeal_id}-exception.rego", exception)
 
-            neighbours = self.index.find(user, obj, 10, self.graph.has_access)
-            found = candidates(
-                self.graph.structure,
-                self.graph.access,
-                (user, obj),
-                self.index.user_ids,
-                self.index.object_ids,
-                neighbours=[(c.user, c.object) for c in neighbours],
-                object_identity=self.settings.object_identity,
-            )[: self.settings.candidates]
+            neighbours, found = self._candidates(user, obj)
+            listed = self._listed((user, obj), found, len(neighbours), action)
 
             record = {
                 "id": appeal_id,
@@ -91,9 +91,7 @@ class AppealService:
                     {"user": c.user, "object": c.object, "similarity": round(c.similarity, 4)}
                     for c in neighbours
                 ],
-                "candidates": [
-                    _candidate(i, c, self.describe(c.predicates, action)) for i, c in enumerate(found, start=1)
-                ],
+                "candidates": listed,
                 "files": {"exception": str(exception_file)},
                 "history": [],
             }
@@ -102,6 +100,43 @@ class AppealService:
             self._grant(record, "exception", record["exception"]["description"], [(user, obj)], by)
             self._save(record)
         return record
+
+    def preview(self, user: str, obj: str, action: str, reason: str | None) -> dict:
+        """What an appeal would find, without writing anything: the candidates, the scope and tier of
+        the best one (#1), and the AI risk of the appealed pair. For the admin to look before deciding;
+        nothing is applied from it."""
+        neighbours, found = self._candidates(user, obj)
+        listed = self._listed((user, obj), found, len(neighbours), action)
+        risk = self.model.risk(user, obj)
+        return {
+            "dry_run": True,
+            "appeal": {"user": user, "object": obj, "action": action, "reason": reason},
+            "risk": risk.risk,
+            "high_risk": risk.high_risk,
+            "candidates": listed,
+            "scope": listed[0]["scope"] if listed else None,
+        }
+
+    def _listed(self, appeal: tuple[str, str], found: list, similar: int, action: str) -> list[dict]:
+        """The candidates with the scope and tier each would have as a rule (what confirm checks), and
+        how many of the appeal's similar cases each one covers (its support, as a count)."""
+        listed = []
+        for i, c in enumerate(found, start=1):
+            try:
+                opened = opened_pairs(
+                    self.graph.structure,
+                    self.graph.access,
+                    appeal,
+                    self.index.user_ids,
+                    self.index.object_ids,
+                    c.predicates,
+                )
+                scope = asdict(assess(opened, self.model, self.settings.tier_limits))
+            except ValueError:
+                scope = None
+            listed.append({**_candidate(i, c, self.describe(c.predicates, action)), "scope": scope,
+                           "similar": {"covered": round(c.support * similar), "of": similar}})
+        return listed
 
     def get(self, appeal_id: str) -> dict:
         path = self._path(appeal_id)
@@ -145,6 +180,7 @@ class AppealService:
                 action,
                 predicates,
                 {"users": scope.users, "pairs": scope.pairs, "tier": scope.tier, "approved_by": by or ""},
+                self.resource_type,
                 description=description,
             )
             expected = expected_decisions(
@@ -217,17 +253,6 @@ class AppealService:
                 with (self.settings.appeals_dir / f"{appeal_id}-usage.jsonl").open("a", encoding="utf-8") as f:
                     f.write(line + "\n")
         return [appeal_id for appeal_id, _ in entries]
-
-    def _index(self, appeal_id: str, snapshot: dict) -> None:
-        with self.usage_lock:
-            for kind, granted in snapshot.items():
-                if granted["revoked"]:
-                    continue
-                for entry in granted["access"]["by_user"]:
-                    for obj in entry["objects"]:
-                        found = self.usage_index.setdefault((entry["user"], obj), [])
-                        if (appeal_id, kind, granted["action"]) not in found:
-                            found.append((appeal_id, kind, granted["action"]))
 
     def can_reach(self, user: str, obj: str) -> bool:
         # Access the history shows, or access an appeal granted and nobody revoked.
@@ -354,7 +379,18 @@ class AppealService:
         record["files"]["granted"] = str(path)
         self._index(record["id"], {kind: snapshot[kind]})
 
-    def preview(self, appeal_id: str, candidate: int) -> dict:
+    def _index(self, appeal_id: str, snapshot: dict) -> None:
+        with self.usage_lock:
+            for kind, granted in snapshot.items():
+                if granted["revoked"]:
+                    continue
+                for entry in granted["access"]["by_user"]:
+                    for obj in entry["objects"]:
+                        found = self.usage_index.setdefault((entry["user"], obj), [])
+                        if (appeal_id, kind, granted["action"]) not in found:
+                            found.append((appeal_id, kind, granted["action"]))
+
+    def preview_candidate(self, appeal_id: str, candidate: int) -> dict:
         # Who would gain access to what if the admin accepted this candidate. Nothing is written.
         record = self.get(appeal_id)
         if not 1 <= candidate <= len(record["candidates"]):
@@ -385,6 +421,20 @@ class AppealService:
             raise AppealError(422, str(error)) from error
         return chosen, predicates, opened
 
+    def _candidates(self, user: str, obj: str) -> tuple[list, list]:
+        s = self.settings
+        neighbours = closest(self.index.find(user, obj, s.similar_max, self.graph.has_access), s.similar_min, s.similar_margin)
+        found = candidates(
+            self.graph.structure,
+            self.graph.access,
+            (user, obj),
+            self.index.user_ids,
+            self.index.object_ids,
+            neighbours=[(c.user, c.object) for c in neighbours],
+            object_identity=self.settings.object_identity,
+        )[: self.settings.candidates]
+        return neighbours, found
+
     def _validate(self, rego: str, package: str, action: str, expected: dict) -> Report:
         try:
             return validate(
@@ -395,6 +445,7 @@ class AppealService:
                 expected,
                 self.settings.opa_path,
                 self.settings.policy_dir,
+                self.resource_type,
             )
         except (OSError, RuntimeError) as error:
             raise AppealError(503, f"opa is not available: {error}") from error

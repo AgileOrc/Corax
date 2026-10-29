@@ -10,7 +10,7 @@ from pathlib import Path
 Pair = tuple[str, str]
 
 PACKAGES = {"app.generated", "app.exceptions"}
-INPUT_REFS = {("action",), ("user", "id"), ("resource", "id")}
+INPUT_REFS = {("action",), ("user", "id"), ("resource", "id"), ("resource", "type")}
 OPERATORS = {("equal",), ("internal", "member_2")}
 TERM_TYPES = {"ref", "var", "string", "call", "boolean"}
 
@@ -40,6 +40,7 @@ def validate(
     expected: Mapping[Pair, bool],
     opa: str = "opa",
     policy_dir: str | Path | None = None,
+    resource_type: str | None = None,
 ) -> Report:
     report = Report()
     with tempfile.TemporaryDirectory() as tmp:
@@ -63,10 +64,16 @@ def validate(
             if not report.add("app tests", result.returncode == 0, output[-1] if output else ""):
                 return report
 
-        allowed = _evaluate(opa, rule_file, Path(tmp), package, action, graph, expected)
+        allowed = _evaluate(opa, rule_file, Path(tmp), package, action, graph, expected, resource_type)
         wrong = sorted(pair for pair, want in expected.items() if (pair in allowed) != want)
         detail = f"{len(expected)} pairs" if not wrong else f"{len(wrong)} differ, e.g. {wrong[:3]}"
         report.add("equivalence", not wrong, detail)
+
+        if resource_type is not None:
+            # the same pairs as another kind of resource: the rule must allow none of them
+            other = _evaluate(opa, rule_file, Path(tmp), package, action, graph, expected, f"not_{resource_type}")
+            detail = "" if not other else f"{len(other)} allowed as another type, e.g. {sorted(other)[:3]}"
+            report.add("resource type", not other, detail)
     return report
 
 def expected_decisions(
@@ -138,12 +145,13 @@ def _term_problem(term: dict) -> str | None:
     text = ".".join(str(t.get("value")) for t in term["value"])
     return f"reference {text} is not allowed"
 
-def _evaluate(opa, rule_file, tmp, package, action, graph, expected) -> set[Pair]:
+def _evaluate(opa, rule_file, tmp, package, action, graph, expected, resource_type=None) -> set[Pair]:
     pairs = sorted(expected)
     nodes = {n for pair in pairs for n in pair}
+    resource = {} if resource_type is None else {"type": resource_type}
     data = {
         "corax": {"graph": {n: graph[n] for n in nodes if n in graph}},
-        "validation": {"pairs": [list(p) for p in pairs], "action": action},
+        "validation": {"pairs": [list(p) for p in pairs], "action": action, "resource": resource},
     }
     data_file = tmp / "data.json"
     data_file.write_text(json.dumps(data), encoding="utf-8")
@@ -152,8 +160,9 @@ def _evaluate(opa, rule_file, tmp, package, action, graph, expected) -> set[Pair
         "package validation\n\n"
         "allowed contains [u, o] if {\n"
         "\tsome [u, o] in data.validation.pairs\n"
+        '\tresource := object.union({"id": o}, data.validation.resource)\n'
         f"\tdata.{package}.allow with input as "
-        '{"user": {"id": u}, "resource": {"id": o}, "action": data.validation.action}\n'
+        '{"user": {"id": u}, "resource": resource, "action": data.validation.action}\n'
         "}\n",
         encoding="utf-8",
     )

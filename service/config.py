@@ -16,6 +16,14 @@ class Settings:
     corax_config: Path | None = None
     object_identity: bool = False
     candidates: int = 8
+    # the similar cases of an appeal: every case at most similar_margin less similar than the closest
+    # one, at least similar_min and at most similar_max of them (how many depends on the appeal)
+    similar_min: int = 5
+    similar_max: int = 30
+    similar_margin: float = 0.03
+    # the route resource_type that generated rules and exceptions are limited to;
+    # None: the object node type of the HGNN's target edge type
+    resource_type: str | None = None
     tier_limits: TierLimits = field(default_factory=TierLimits)
 
     @classmethod
@@ -33,6 +41,10 @@ class Settings:
             corax_config=Path(env("CORAX_CONFIG")) if env("CORAX_CONFIG") else None,
             object_identity=env("OBJECT_IDENTITY", "false").lower() in {"1", "true", "yes"},
             candidates=int(env("APPEAL_CANDIDATES", 8)),
+            similar_min=int(env("APPEAL_SIMILAR_MIN", 5)),
+            similar_max=int(env("APPEAL_SIMILAR_MAX", 30)),
+            similar_margin=float(env("APPEAL_SIMILAR_MARGIN", 0.03)),
+            resource_type=env("APPEAL_RESOURCE_TYPE") or None,
             tier_limits=TierLimits(
                 max_user_share=float(env("AUTO_APPLY_MAX_USER_SHARE", defaults.max_user_share)),
                 max_pairs=int(env("AUTO_APPLY_MAX_PAIRS", defaults.max_pairs)),

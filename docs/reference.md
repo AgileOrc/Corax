@@ -13,7 +13,7 @@ FastAPI service called by OPA and by admins. It reads the folder written by `hgn
 | `POST /risk` | OPA (`http.send`), only after the policy allowed a request | Returns `risk = 1 − σ(h_user · h_object)` from the HGNN embeddings, and logs the use when the access came from an appeal |
 | `POST /usage` | OPA, when an appeal exception allowed a request | Logs the use of the exception, which skips `/risk` |
 | `GET /health` | Checks, demo | Model info: target edge type, risk threshold, number of users and objects |
-| `POST /corax/appeals` | Admin, through Envoy and OPA | Writes the exact exception at once, returns similar cases and candidate rules |
+| `POST /corax/appeals` | Admin, through Envoy and OPA | Writes the exact exception at once, returns similar cases and candidate rules, each with its scope and tier. Refused with 409 when the user already has the access. With `dry_run`, writes nothing and returns what the appeal would find |
 | `GET /corax/appeals/{id}` | Admin | The appeal record and its history (audit log) |
 | `GET /corax/appeals/{id}/candidates/{n}` | Admin | Preview: who would gain access to what if the admin accepted candidate `n`. Nothing is written |
 | `POST /corax/appeals/{id}/confirm` | Admin | Writes the rule the admin accepted as a validated rule, or keeps only the exception |
@@ -43,6 +43,8 @@ CORAX_MODEL_DIR=output/exp-hard50 uvicorn main:app --app-dir service --port 8000
 | `POLICY_DIR` | none | The application's policy folder. Its `opa test` must still pass |
 | `OBJECT_IDENTITY` | `false` | Allow "object is <id>" in candidates (objects that are systems, as in the Amazon data) |
 | `APPEAL_CANDIDATES` | `8` | How many candidate patterns an appeal returns |
+| `APPEAL_SIMILAR_MIN`, `APPEAL_SIMILAR_MAX`, `APPEAL_SIMILAR_MARGIN` | `5`, `30`, `0.03` | The similar cases of an appeal: every case at most the margin less similar than the closest one, at least the minimum and at most the maximum of them. An appeal among many near identical cases gets more of them |
+| `APPEAL_RESOURCE_TYPE` | the object type of the model's target edge | The `resource_type` that rules and exceptions from appeals hold for. Set it when the routes name the type differently from the graph |
 | `AUTO_APPLY_MAX_USER_SHARE` | `0.4` | Share of all users (0 to 1, e.g. `0.5` = 50%) that may get new access. Above it a rule is "large" |
 | `AUTO_APPLY_MAX_PAIRS`, `AUTO_APPLY_MAX_MEAN_RISK` | `50`, `0.5` | New (user, object) pairs and their mean risk. Above either a rule is "large" |
 
@@ -63,8 +65,9 @@ Then recreate the service with `docker compose -f deploy/docker-compose.yml up -
 AUTO_APPLY_MAX_USER_SHARE=0.5 CORAX_MODEL_DIR=output/dummy uvicorn main:app --app-dir service --port 8000
 ```
 
-The cases of `deploy/demo/demo.sh` are written for the default limits. With other limits an appeal
-may change tier, for example the large one in case 5 may become small.
+The document app demo sets `AUTO_APPLY_MAX_USER_SHARE` to `0.06` in `deploy/docker-compose.yml`, which is 5 of
+its model's 86 employees. Its walkthrough ([docs/demo.md](demo.md)) is written for that limit. With other limits an
+appeal may change tier.
 
 Appeals need `graph.json` and `access.json` in the model folder. Without them only `/risk` runs.
 
@@ -360,7 +363,6 @@ evaluate/  loads the saved model, never trains
 |---|---|
 | `check_env.py` | Checks that the Python environment has the required packages |
 | `demo_appeal.py` | Demo on the dummy data: three appeals (small rule written, large rule refused with 409, exception only) end to end, then opa evaluates the written Rego. Nothing is trained |
-| `make_token.py` | Prints a demo JWT signed with the HS256 secret of a Corax config (`deploy/demo/data.json` by default) |
 | `demo_risk.py` | Demo: the risk score on held-out pairs the model never saw, next to the true answer. Nothing is trained or written |
 | `similar_cases.py` | For one appealed (user, object) pair: the kNN similar cases, the candidate patterns and, with `--pick N`, the tier, Rego and validation of candidate N. Nothing is written |
 | `prepare/make_dummy.py` | Writes the small dummy data graph with two appeal scenarios, for tests and local trials |
@@ -368,6 +370,8 @@ evaluate/  loads the saved model, never trains
 | `prepare/make_amazon_scenarios.py` | Hides inferred role-based rules (title → resource) in the Amazon graph, for evaluating appeals |
 | `prepare/convert_xu_stoller.py` | Converts a Xu & Stoller ABAC policy (`.abac`) with one rule hidden (`--hide-rule N`) or each rule in turn (`--all-rules`) |
 | `prepare/appeal_scenarios.py` | Reads and writes `scenarios.json` (used by the scripts above) |
+| `prepare/make_enterprise.py`, `prepare/make_office.py` | The synthetic enterprise and office graphs of the document app demo ([scripts/README.md](../scripts/README.md)) |
+| `demo_gateway.py`, `demo_office.py`, `demo_office_cases.py`, `demo_backend.py` | The document app demo: prepare its graph and model, then send its cases through the Docker gateway ([docs/demo.md](demo.md)) |
 | `evaluate/evaluate_hgnn.py` | Test metrics of the risk score and the risk threshold calibration table |
 | `evaluate/evaluate_knn.py` | kNN precision@k, rank of the hidden rule among the candidate patterns, and its tier |
 

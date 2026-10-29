@@ -22,7 +22,7 @@
 | 6 | Another large appeal | The admin approves after reviewing its scope and the rule is applied |
 | 7 | The admin revokes the rule | **403** again: the rule file is deleted and the revoke is recorded |
 
-The demo runs on dummy data, the full walkthrough is in [getting started](docs/getting-started.md#3-end-to-end-demo-with-docker).
+The demo is a document app on synthetic company data, the full walkthrough is in [Running the demo](docs/demo.md).
 
 ## Why Corax?
 
@@ -71,12 +71,14 @@ python -m hgnn --data output/dummy-data --target-relation accessed --out output/
 python scripts/demo_risk.py --model-dir output/dummy
 ```
 
-End-to-end demo with Envoy, OPA and the service (Docker):
+End-to-end demo with Envoy, OPA, the service and a document app (Docker):
 
 ```bash
-docker compose -f deploy/docker-compose.yml up --build -d
-bash deploy/demo/demo.sh
+docker compose -f deploy/docker-compose.yml run --rm prepare
+docker compose -f deploy/docker-compose.yml up -d --build
 ```
+
+Then open http://localhost:8080 (the document app) and http://localhost:8090 (the Corax console).
 
 Installation and walkthrough: [Getting started](docs/getting-started.md)
 

@@ -1,9 +1,10 @@
-# Envoy in front of the campus API. Every request goes to OPA first (ext_authz, gRPC); if OPA cannot be
-# reached the request is denied (failure_mode_allow: false). /corax/* is Corax's admin API (service),
-# everything else is the application (upstream). The access log shows OPA's reason and the AI risk.
+# Envoy, the policy enforcement point. Every request is checked by OPA (ext_authz, gRPC) before it
+# is routed: /corax/... (the admin API) to the service, everything else to the document app. If OPA is
+# unreachable or fails, the request is denied (failure_mode_allow: false); a denied request gets 403.
+# The one exception is POST /auth/login, where the app issues the token: it skips the check.
 static_resources:
   listeners:
-    - name: ingress
+    - name: gateway
       address:
         socket_address: {address: 0.0.0.0, port_value: 8080}
       filter_chains:
@@ -11,23 +12,52 @@ static_resources:
             - name: envoy.filters.network.http_connection_manager
               typed_config:
                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
-                stat_prefix: ingress
+                stat_prefix: gateway
+                # one line per request with OPA's reason and the AI risk (as in PR #7's deploy/envoy.yaml);
+                # trace is the x-demo-trace header that scripts/demo_backend.py sets to find its requests
                 access_log:
                   - name: envoy.access_loggers.stdout
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
                       log_format:
                         text_format_source:
-                          inline_string: "%REQ(:METHOD)% %REQ(:PATH)% -> %RESPONSE_CODE% reason=%DYNAMIC_METADATA(envoy.filters.http.ext_authz:corax_reason)% risk=%DYNAMIC_METADATA(envoy.filters.http.ext_authz:corax_risk)%\n"
+                          inline_string: "[%START_TIME%] %REQ(:METHOD)% %REQ(:PATH)% -> %RESPONSE_CODE% reason=%DYNAMIC_METADATA(envoy.filters.http.ext_authz:corax_reason)% risk=%DYNAMIC_METADATA(envoy.filters.http.ext_authz:corax_risk)% trace=%REQ(X-DEMO-TRACE)%\n"
                 route_config:
+                  name: routes
                   virtual_hosts:
-                    - name: campus
+                    - name: corax
                       domains: ["*"]
                       routes:
                         - match: {prefix: "/corax/"}
                           route: {cluster: service}
+                        - match:
+                            path: "/auth/login"
+                            headers: [{name: ":method", string_match: {exact: "POST"}}]
+                          route: {cluster: app}
+                          typed_per_filter_config:
+                            envoy.filters.http.ext_authz:
+                              "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
+                              disabled: true
+                        # the web frontend's files (demo/web) are public: the page itself, then
+                        # every call it makes goes through the check below
+                        - match:
+                            path: "/"
+                            headers: [{name: ":method", string_match: {exact: "GET"}}]
+                          route: {cluster: web}
+                          typed_per_filter_config:
+                            envoy.filters.http.ext_authz:
+                              "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
+                              disabled: true
+                        - match:
+                            prefix: "/assets/"
+                            headers: [{name: ":method", string_match: {exact: "GET"}}]
+                          route: {cluster: web}
+                          typed_per_filter_config:
+                            envoy.filters.http.ext_authz:
+                              "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
+                              disabled: true
                         - match: {prefix: "/"}
-                          route: {cluster: upstream}
+                          route: {cluster: app}
                 http_filters:
                   - name: envoy.filters.http.ext_authz
                     typed_config:
@@ -36,14 +66,14 @@ static_resources:
                       failure_mode_allow: false
                       grpc_service:
                         envoy_grpc: {cluster_name: opa}
-                        timeout: 2s
+                        timeout: 1s
                   - name: envoy.filters.http.router
                     typed_config:
                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
-
   clusters:
     - name: opa
       type: STRICT_DNS
+      connect_timeout: 1s
       typed_extension_protocol_options:
         envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
           "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
@@ -56,9 +86,19 @@ static_resources:
               - endpoint:
                   address:
                     socket_address: {address: opa, port_value: 9191}
-
+    - name: app
+      type: STRICT_DNS
+      connect_timeout: 1s
+      load_assignment:
+        cluster_name: app
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: {address: app, port_value: 8000}
     - name: service
       type: STRICT_DNS
+      connect_timeout: 1s
       load_assignment:
         cluster_name: service
         endpoints:
@@ -66,13 +106,13 @@ static_resources:
               - endpoint:
                   address:
                     socket_address: {address: service, port_value: 8000}
-
-    - name: upstream
+    - name: web
       type: STRICT_DNS
+      connect_timeout: 1s
       load_assignment:
-        cluster_name: upstream
+        cluster_name: web
         endpoints:
           - lb_endpoints:
               - endpoint:
                   address:
-                    socket_address: {address: upstream, port_value: 5678}
+                    socket_address: {address: web, port_value: 80}

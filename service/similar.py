@@ -82,6 +82,15 @@ class SimilarityIndex:
         ]
 
 
+def closest(found: list[SimilarCase], minimum: int, margin: float) -> list[SimilarCase]:
+    """The cases of found (most similar first) at most margin less similar than the first, and at
+    least minimum of them: an appeal in a crowd of near-identical cases gets many, an unusual one few."""
+    if not found:
+        return []
+    cut = found[0].similarity - margin
+    return [c for i, c in enumerate(found) if i < minimum or c.similarity >= cut]
+
+
 def _unit_rows(matrix: np.ndarray) -> np.ndarray:
     matrix = matrix.astype(np.float64)
     norms = np.linalg.norm(matrix, axis=1, keepdims=True)

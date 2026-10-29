@@ -107,3 +107,17 @@ def test_generated_files_pass_opa_check(opa, tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_rule_and_exception_can_be_limited_to_a_resource_type():
+    rule = render_rule("appeal-0001", "read_grades", HEAD_RULE, resource_type="student")
+    exception = render_exception(
+        "appeal-0001", "lecturer_budi", "read_grades", "student_candra", "student"
+    )
+
+    assert rule.splitlines()[-6:-4] == [
+        '\tinput.action == "read_grades"',
+        '\tinput.resource.type == "student"',
+    ]
+    assert '\tinput.resource.type == "student"' in exception
+    assert "input.resource.type" not in render_rule("appeal-0001", "read_grades", HEAD_RULE)

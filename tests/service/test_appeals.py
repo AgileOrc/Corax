@@ -102,6 +102,7 @@ def test_appeal_applies_the_exception_at_once(client, settings):
     assert 'input.user.id == "budi"' in exception
     assert 'input.resource.id == "candra"' in exception
     assert 'input.action == "read_grades"' in exception
+    assert 'input.resource.type == "student"' in exception
     assert [e["event"] for e in record["history"]] == ["created", "exception_applied"]
     assert all(e["by"] == "admin_rina" for e in record["history"])
 
@@ -147,6 +148,8 @@ def test_small_rule_is_validated_and_written(client, settings):
     rule = (settings.generated_dir / "appeal-0001-rule.rego").read_text(encoding="utf-8")
     assert rule.startswith("package app.generated")
     assert '"head" in data.corax.graph[input.user.id]["holds"]' in rule
+    assert 'input.resource.type == "student"' in rule
+    assert [check["name"] for check in confirmed["validation"]][-1] == "resource type"
     assert f"# description: {json.dumps(confirmed['chosen']['description'])}" in rule
     assert f"#   pattern: {json.dumps(HEAD_RULE)}" in rule
     assert confirmed["history"][-1] == {**confirmed["history"][-1], "event": "rule_applied", "by": "admin_rina"}
@@ -555,3 +558,80 @@ def test_suggestions_and_rank_are_for_admins(settings):
         assert anonymous.get("/corax/suggestions", headers=bearer("bob")).status_code == 403
         body = {"user": "sari", "relation": "member_of", "node": "IF"}
         assert anonymous.post("/corax/rank", json=body, headers=bearer("bob")).status_code == 403
+
+
+# --- dry run, access already held, resource type ---------------------------------------------------
+
+
+def test_appeal_for_access_already_held_is_refused(client, settings):
+    # budi already reads ani: an exception or a rule would change nothing
+    response = client.post("/corax/appeals", json={**APPEAL, "object": "ani"})
+
+    assert response.status_code == 409
+    assert not settings.generated_dir.exists()
+
+
+def test_dry_run_reports_without_writing(client, settings):
+    response = client.post("/corax/appeals", json={**APPEAL, "dry_run": True})
+
+    assert response.status_code == 200, response.json()
+    preview = response.json()
+    assert preview["dry_run"] is True and "id" not in preview
+    assert preview["appeal"] == {k: APPEAL[k] for k in ("user", "object", "action", "reason")}
+    assert 0.0 <= preview["risk"] <= 1.0 and isinstance(preview["high_risk"], bool)
+    assert preview["scope"]["tier"] in ("small", "large") and preview["scope"]["pairs"] == preview["candidates"][0]["pairs"]
+    assert not settings.generated_dir.exists() and not settings.appeals_dir.exists()
+    # the same candidates an appeal finds, and the first appeal still gets the first id
+    assert create(client)["candidates"] == preview["candidates"]
+    assert create(client)["id"] == "appeal-0002"
+
+
+def test_dry_run_scope_matches_the_tier_check_of_confirm(client):
+    preview = client.post("/corax/appeals", json={**APPEAL, "dry_run": True}).json()
+    record = create(client)
+
+    confirmed = client.post(f"/corax/appeals/{record['id']}/confirm", json={"candidate": 1})
+
+    if preview["scope"]["tier"] == "small":
+        assert confirmed.json()["chosen"]["scope"] == preview["scope"]
+    else:
+        assert confirmed.status_code == 409 and confirmed.json()["scope"] == preview["scope"]
+
+
+def test_every_candidate_has_its_scope_and_nothing_is_picked_for_the_admin(client):
+    preview = client.post("/corax/appeals", json={**APPEAL, "dry_run": True}).json()
+    record = create(client)
+
+    assert all(c["scope"]["tier"] in ("small", "large") for c in preview["candidates"])
+    assert preview["scope"] == preview["candidates"][0]["scope"]
+    assert "auto_apply" not in preview and "auto_apply" not in record
+
+
+def test_dry_run_is_refused_like_an_appeal(client, settings):
+    assert client.post("/corax/appeals", json={**APPEAL, "object": "ani", "dry_run": True}).status_code == 409
+    with TestClient(create_app(settings)) as anonymous:
+        assert anonymous.post("/corax/appeals", json={**APPEAL, "dry_run": True}).status_code == 401
+
+
+def test_a_dry_run_writes_no_snapshot(client, settings):
+    client.post("/corax/appeals", json={**APPEAL, "dry_run": True})
+
+    assert not (settings.appeals_dir / "appeal-0001-granted.json").exists()
+
+
+def test_resource_type_can_be_configured(settings):
+    named = Settings(**{**settings.__dict__, "resource_type": "transcript"})
+
+    with TestClient(create_app(named), headers=ADMIN) as client:
+        record = client.post("/corax/appeals", json=APPEAL).json()
+
+    exception = (settings.generated_dir / f"{record['id']}-exception.rego").read_text(encoding="utf-8")
+    assert 'input.resource.type == "transcript"' in exception
+
+
+def test_each_candidate_counts_the_similar_cases_it_covers(client):
+    preview = client.post("/corax/appeals", json={**APPEAL, "dry_run": True}).json()
+
+    for c in preview["candidates"]:
+        assert 1 <= c["similar"]["of"] <= 30 and c["similar"]["covered"] == round(c["support"] * c["similar"]["of"])
+    assert len({c["similar"]["of"] for c in preview["candidates"]}) == 1

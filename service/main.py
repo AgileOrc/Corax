@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from appeals import AppealError, AppealService
 from auth import AdminAuth, AuthError
 from config import Settings
-from fastapi import Depends, FastAPI, Header, Request
+from fastapi import Depends, FastAPI, Header, Request, Response
 from fastapi.responses import JSONResponse
 from graph import GraphData
 from pydantic import BaseModel, Field
@@ -34,6 +34,9 @@ class AppealRequest(BaseModel):
     object: str = Field(min_length=1, max_length=256)
     action: str = Field(min_length=1, max_length=128)
     reason: str | None = Field(default=None, max_length=1000)
+    # only report what the appeal would find (candidates, the best one's scope and tier, the pair's
+    # risk); nothing is written
+    dry_run: bool = False
 
 class ConfirmRequest(BaseModel):
     candidate: int | None = None
@@ -125,9 +128,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"logged": app.state.appeals.record_use(request.user, request.object, request.action, "exception")}
 
     @app.post("/corax/appeals", status_code=201)
-    def create_appeal(body: AppealRequest, admin: str = Depends(require_admin)) -> dict:
-        record = appeals().create(body.user, body.object, body.action, body.reason, admin)
-        log.info("appeal %s by %s: %s -> %s (%s)", record["id"], admin, body.user, body.object, body.action)
+    def create_appeal(body: AppealRequest, response: Response, admin: str = Depends(require_admin)) -> dict:
+        record = appeals().create(body.user, body.object, body.action, body.reason, admin, body.dry_run)
+        if body.dry_run:
+            response.status_code = 200
+            log.info("dry run by %s: %s -> %s (%s)", admin, body.user, body.object, body.action)
+        else:
+            log.info("appeal %s by %s: %s -> %s (%s)", record["id"], admin, body.user, body.object, body.action)
         return record
 
     @app.get("/corax/appeals/{appeal_id}")
@@ -136,7 +143,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/corax/appeals/{appeal_id}/candidates/{candidate}")
     def preview_candidate(appeal_id: str, candidate: int, admin: str = Depends(require_admin)) -> dict:
-        return appeals().preview(appeal_id, candidate)
+        return appeals().preview_candidate(appeal_id, candidate)
 
     @app.post("/corax/appeals/{appeal_id}/confirm")
     def confirm_appeal(appeal_id: str, body: ConfirmRequest, admin: str = Depends(require_admin)) -> dict:

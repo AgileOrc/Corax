@@ -5,7 +5,7 @@ requires-python = ">=3.11"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = [".", "scripts", "scripts/prepare", "scripts/evaluate", "service"]
+pythonpath = [".", "scripts", "scripts/prepare", "scripts/evaluate", "service", "demo/app"]
 # Noise from third-party libraries on Python 3.13, not from Corax code.
 filterwarnings = [
     "ignore::DeprecationWarning:torch_geometric.*",
