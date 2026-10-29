@@ -197,6 +197,7 @@ class AppealService:
                 "description": description,
                 "pattern": chosen["pattern"],
                 "scope": asdict(scope),
+                "limits": asdict(self.settings.tier_limits),
             }
             record["validation"] = _checks(report)
             if not report.ok:

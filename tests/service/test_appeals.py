@@ -1,5 +1,6 @@
 import json
 import time
+from dataclasses import asdict
 
 import jwt
 import numpy as np
@@ -144,6 +145,7 @@ def test_small_rule_is_validated_and_written(client, settings):
     confirmed = response.json()
     assert confirmed["status"] == "rule_applied"
     assert confirmed["chosen"]["scope"]["tier"] == "small"
+    assert confirmed["chosen"]["limits"] == asdict(settings.tier_limits)
     assert all(check["ok"] for check in confirmed["validation"])
     rule = (settings.generated_dir / "appeal-0001-rule.rego").read_text(encoding="utf-8")
     assert rule.startswith("package app.generated")

@@ -9,6 +9,7 @@ import Documents from "./pages/Documents.jsx";
 import Login from "./pages/Login.jsx";
 import MyRequests from "./pages/MyRequests.jsx";
 import Shared from "./pages/Shared.jsx";
+import Audit from "./pages/admin/Audit.jsx";
 import Grant from "./pages/admin/Grant.jsx";
 import Request from "./pages/admin/Request.jsx";
 import Requests from "./pages/admin/Requests.jsx";
@@ -25,6 +26,7 @@ const ROUTES = [
   [/^#\/shared$/, Shared],
   [/^#\/requests$/, MyRequests],
   [/^#\/rules$/, Rules],
+  [/^#\/audit$/, Audit],
   [/^#\/grant$/, Grant],
   [/^#\/suggestions$/, Suggestions],
   [/^#\/admin(?:\/(pending|granted|decided|all))?$/, Requests],
@@ -32,7 +34,7 @@ const ROUTES = [
 ];
 
 const ADMIN_LINKS = [["#/admin", "Requests"], ["#/suggestions", "Suggested access"],
-                     ["#/grant", "Give access"], ["#/rules", "Access granted"]];
+                     ["#/grant", "Give access"], ["#/rules", "Access granted"], ["#/audit", "Audit log"]];
 const EMPLOYEE_LINKS = [["#/documents", "Documents"], ["#/shared", "Shared with me"], ["#/requests", "My requests"]];
 
 function TopBar({ user, hash, onSignOut }) {
@@ -54,7 +56,7 @@ function TopBar({ user, hash, onSignOut }) {
           <b className="font-semibold text-ink">{user.name}</b>
           {admin ? `  |  ${user.id}` : `  |  ${titled(user.role)} - ${titled(user.department)}  |  ${place(user.site, user.region)}`}
         </span>
-        <Button variant="ghost" size="md" className="bg-accent/5! border-accent/15!" onClick={() => onSignOut()}>Sign out</Button>
+        <Button variant="ghost" size="md" className="bg-accent/5! border-accent/15! hover:bg-ink/10!" onClick={() => onSignOut()}>Sign out</Button>
       </div>
     </header>
   );
