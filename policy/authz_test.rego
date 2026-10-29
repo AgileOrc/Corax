@@ -257,7 +257,7 @@ test_ai_request_uses_token_user_and_path_resource if {
 expect_alice_bob(req) := {"status_code": 200, "body": {"risk": 0.1, "high_risk": false}} if {
 	req.method == "POST"
 	req.url == "http://corax-service.test/risk"
-	req.body == {"user": "alice", "object": "bob"}
+	req.body == {"user": "alice", "object": "bob", "action": "read_grades"}
 }
 
 # --- Appeal exceptions ---------------------------------------------------------------
@@ -284,9 +284,41 @@ test_exception_skips_ai_check if {
 }
 
 test_exception_reason if {
-	authz.result == {"allowed": true, "headers": {"x-corax-user": "alice"}, "dynamic_metadata": {"corax_reason": "allowed by appeal exception"}} with input as read_grades
+	authz.result == {"allowed": true, "headers": {"x-corax-user": "alice"}, "dynamic_metadata": {"corax_reason": "allowed by appeal exception", "corax_usage_logged": true}} with input as read_grades
 		with data.corax.config as fixture_config
 		with data.app.exceptions.allow as true
+		with http.send as usage_ok
+}
+
+usage_ok(req) := {"status_code": 200, "body": {"logged": ["appeal-0001"]}} if {
+	req.method == "POST"
+	req.url == "http://corax-service.test/usage"
+	req.body == {"user": "alice", "object": "bob", "action": "read_grades"}
+}
+
+test_exception_use_is_reported_to_the_service if {
+	authz.usage_response.status_code == 200 with input as read_grades
+		with data.corax.config as fixture_config
+		with data.app.exceptions.allow as true
+		with http.send as usage_ok
+}
+
+test_usage_report_failing_keeps_the_exception_allowed if {
+	authz.allow with input as read_grades
+		with data.corax.config as fixture_config
+		with data.app.exceptions.allow as true
+		with http.send as risk_unreachable
+	authz.result.dynamic_metadata.corax_usage_logged == false with input as read_grades
+		with data.corax.config as fixture_config
+		with data.app.exceptions.allow as true
+		with http.send as risk_unreachable
+}
+
+test_no_usage_report_without_an_exception if {
+	not authz.usage_response with input as read_grades
+		with data.corax.config as fixture_config
+		with data.app.authz.allow as true
+		with http.send as risk_low
 }
 
 test_exception_still_needs_valid_token if {
@@ -303,7 +335,16 @@ alice_token := concat(" ", ["Bearer", sign(valid_claims, secret)])
 bob_token := concat(" ", ["Bearer", sign(object.union(valid_claims, {"sub": "bob"}), secret)])
 
 test_admin_can_create_read_and_confirm_appeals if {
-	every method_path in [["POST", "/corax/appeals"], ["GET", "/corax/appeals/appeal-0001"], ["POST", "/corax/appeals/appeal-0001/confirm"]] {
+	every method_path in [
+		["POST", "/corax/appeals"],
+		["GET", "/corax/appeals/appeal-0001"],
+		["GET", "/corax/appeals/appeal-0001/candidates/2"],
+		["POST", "/corax/appeals/appeal-0001/confirm"],
+		["POST", "/corax/appeals/appeal-0001/revoke"],
+		["GET", "/corax/rules"],
+		["GET", "/corax/suggestions"],
+		["POST", "/corax/rank"],
+	] {
 		authz.allow with input as envoy_input(method_path[0], method_path[1], alice_token)
 			with data.corax.config as fixture_config
 		authz.reason == "admin action" with input as envoy_input(method_path[0], method_path[1], alice_token)
@@ -339,6 +380,43 @@ test_non_admin_is_denied_even_if_other_rules_allow if {
 		with data.app.authz.allow as true
 }
 
+test_non_admin_cannot_read_rules_preview_or_revoke if {
+	every method_path in [
+		["GET", "/corax/rules"],
+		["GET", "/corax/appeals/appeal-0001/candidates/2"],
+		["POST", "/corax/appeals/appeal-0001/revoke"],
+		["GET", "/corax/suggestions"],
+		["POST", "/corax/rank"],
+	] {
+		not authz.allow with input as envoy_input(method_path[0], method_path[1], bob_token)
+			with data.corax.config as fixture_config
+			with data.app.authz.allow as true
+	}
+}
+
+test_any_user_can_list_their_own_access if {
+	authz.allow with input as envoy_input("GET", "/corax/me/access", bob_token)
+		with data.corax.config as fixture_config
+	authz.reason == "own access list" with input as envoy_input("GET", "/corax/me/access", bob_token)
+		with data.corax.config as fixture_config
+	not authz.risk_response with input as envoy_input("GET", "/corax/me/access", bob_token)
+		with data.corax.config as fixture_config
+		with http.send as risk_high
+}
+
+test_own_access_list_needs_a_valid_token if {
+	not authz.allow with input as envoy_input("GET", "/corax/me/access", "")
+		with data.corax.config as fixture_config
+	inp := envoy_input("GET", "/corax/me/access", concat(" ", ["Bearer", sign(object.union(valid_claims, {"sub": "bob"}), "other-secret")]))
+	not authz.allow with input as inp
+		with data.corax.config as fixture_config
+}
+
+test_own_access_list_takes_no_user_from_the_path if {
+	authz.reason == "no matching route" with input as envoy_input("GET", "/corax/me/access/alice", bob_token)
+		with data.corax.config as fixture_config
+}
+
 test_no_admin_configured_means_nobody_is_admin if {
 	not authz.allow with input as envoy_input("POST", "/corax/appeals", alice_token)
 		with data.corax.config as object.remove(fixture_config, ["admin"])
@@ -354,4 +432,33 @@ test_allowed_request_passes_the_user_to_the_upstream if {
 		with data.corax.config as fixture_config
 	authz.result.headers == {} with input as envoy_input("GET", "/corax/appeals/appeal-0001", bob_token)
 		with data.corax.config as fixture_config
+}
+
+# --- Objects a user may reach --------------------------------------------------------------------
+
+objects_query := {"user": "alice", "action": "read_grades", "resource_type": "student", "objects": ["bob", "carol"]}
+
+test_allowed_objects_follow_the_policy if {
+	authz.allowed_objects == {"bob", "carol"} with input as objects_query
+		with data.app.authz.allow as true
+	count(authz.allowed_objects) == 0 with input as objects_query
+		with data.app.authz.allow as false
+}
+
+test_allowed_objects_include_rules_and_exceptions_from_appeals if {
+	authz.allowed_objects == {"bob", "carol"} with input as objects_query
+		with data.app.generated.allow as true
+	authz.allowed_objects == {"bob", "carol"} with input as objects_query
+		with data.app.exceptions.allow as true
+}
+
+test_allowed_objects_never_list_corax_actions if {
+	count(authz.allowed_objects) == 0 with input as object.union(objects_query, {"action": "corax.appeal.read"})
+		with data.app.authz.allow as true
+}
+
+test_allowed_objects_never_call_the_ai if {
+	not authz.risk_response with input as objects_query
+		with data.app.authz.allow as true
+		with http.send as risk_high
 }

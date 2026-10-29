@@ -29,6 +29,13 @@ class AdminAuth:
         self._lock = threading.Lock()
 
     def authenticate(self, authorization: str | None) -> str:
+        user = self.authenticate_user(authorization)
+        if user not in self._config().admins:
+            raise AuthError(403, f"{user} is not an admin")
+        return user
+
+    def authenticate_user(self, authorization: str | None) -> str:
+        # Any user with a valid token, for the routes where users read only their own data.
         config = self._config()
         if not authorization or not authorization.startswith("Bearer "):
             raise AuthError(401, "missing bearer token")
@@ -46,8 +53,6 @@ class AdminAuth:
         user = claims["sub"]
         if not isinstance(user, str):
             raise AuthError(401, "invalid token: sub must be a string")
-        if user not in config.admins:
-            raise AuthError(403, f"{user} is not an admin")
         return user
 
     def _config(self) -> AdminConfig:

@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from graph import GraphData
 from risk import RiskModel
-from similar import SimilarityIndex
+from similar import SimilarCase, SimilarityIndex, closest
 
 
 def write_model(folder, users, objects, access):
@@ -143,3 +143,11 @@ def test_same_result_as_scoring_every_pair(tmp_path, seed, max_per_user):
 
     assert pairs(found) == [(u, o) for _, u, o in expected]
     assert [c.similarity for c in found] == pytest.approx([s for s, _, _ in expected])
+
+
+def test_closest_keeps_the_cases_near_the_first_and_at_least_a_few():
+    found = [SimilarCase("u", f"o{i}", s, s, s) for i, s in enumerate([0.98, 0.97, 0.96, 0.94, 0.90, 0.89])]
+
+    assert [c.object for c in closest(found, 2, 0.03)] == ["o0", "o1", "o2"]
+    assert len(closest(found, 5, 0.03)) == 5  # an unusual appeal still gets the minimum
+    assert len(closest(found, 2, 0.5)) == 6 and closest([], 5, 0.03) == []

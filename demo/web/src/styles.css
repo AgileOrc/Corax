@@ -1,0 +1,93 @@
+@import "tailwindcss";
+
+/* The colors, light and dark: components use them as Tailwind colors (bg-panel, text-muted, ...).
+   Each is light-dark(light, dark): the system's choice, unless the page's switch set data-theme on
+   <html> (src/Theme.jsx). Light is plain gray with a dark gray accent; dark is warm gray leaning to
+   yellow, with silver text and a gold accent. */
+:root {
+  color-scheme: light dark;
+  /* the page's background: gray light from the top right and the bottom left corners */
+  --bg-to: light-dark(#ffffff, #121212);
+  --page-bg: radial-gradient(ellipse 90% 80% at 100% 0%, light-dark(#c6c6c6, #3f3b33) 0%, light-dark(rgb(224 224 224 / 60%), rgb(30 28 25 / 60%)) 45%, transparent 75%),
+             radial-gradient(ellipse 90% 80% at 0% 100%, light-dark(#c6c6c6, #3f3b33) 0%, light-dark(rgb(224 224 224 / 60%), rgb(30 28 25 / 60%)) 45%, transparent 75%);
+  /* the sign-in card: see-through gray over the background */
+  --glass: light-dark(rgb(255 255 255 / 55%), rgb(112 108 98 / 45%));
+  --glass-line: light-dark(rgb(24 24 27 / 45%), rgb(255 250 240 / 75%));
+  --glass-button: light-dark(rgb(120 120 120 / 25%), rgb(172 165 148 / 45%));
+  --panel: light-dark(#ffffff, #1c1a17);
+  /* see-through panels, so the background shows a little */
+  --card: light-dark(rgb(255 255 255 / 70%), rgb(28 26 23 / 70%));
+  --panel-2: light-dark(#f4f4f5, #25231f);
+  --ink: light-dark(#18181b, #ece8df);
+  --muted: light-dark(#63636b, #a9a397);
+  --line: light-dark(#e4e4e7, #36322b);
+  --accent: light-dark(#3f3f46, #d4b062);
+  --accent-ink: light-dark(#ffffff, #1a1610);
+  --accent-soft: light-dark(#e4e4e7, #3a3122);
+  --ok: light-dark(#157347, #4cc38a);
+  --ok-soft: light-dark(#e3f4ea, #13301f);
+  --warn: light-dark(#8a5a00, #f0b94d);
+  --warn-soft: light-dark(#fff3d6, #33270d);
+  --no: light-dark(#b42318, #ff7a6b);
+  --no-soft: light-dark(#fdecea, #3a1714);
+  --info: light-dark(#52525b, #cfc8b8);
+  --info-soft: light-dark(#ededef, #2d2a24);
+  --code: light-dark(#ededef, #2a2722);
+  --shadow: 0 1px 2px light-dark(rgb(0 0 0 / 6%), rgb(0 0 0 / 40%)), 0 1px 3px light-dark(rgb(0 0 0 / 8%), transparent);
+}
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
+
+@theme inline {
+  --color-panel: var(--panel);
+  --color-card: var(--card);
+  --color-panel-2: var(--panel-2);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-no: var(--no);
+  --color-no-soft: var(--no-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-code: var(--code);
+  --color-glass: var(--glass);
+  --color-glass-line: var(--glass-line);
+  --color-glass-button: var(--glass-button);
+  --shadow-card: var(--shadow);
+  --font-sans: "Poppins", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+@layer base {
+  body {
+    @apply min-h-screen font-sans text-[15px] leading-[1.55] text-ink;
+    /* fixed: the gradient spans the window, not the whole page height */
+    background-color: var(--bg-to);
+    background-image: var(--page-bg);
+    background-attachment: fixed;
+  }
+  input[type="checkbox"], input[type="radio"] {
+    accent-color: var(--accent);
+  }
+  /* dropdowns: our own arrow, with room on the right */
+  select {
+    appearance: none;
+    padding-left: 1rem !important;
+    padding-right: 2.75rem !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 1.25rem;
+    cursor: pointer;
+  }
+  a { @apply text-accent hover:underline; }
+  code { @apply rounded-md bg-code px-1.5 py-px font-mono text-[13px] break-words; }
+  input, select, textarea, button, a { @apply focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent; }
+}

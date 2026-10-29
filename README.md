@@ -20,9 +20,9 @@
 | 4 | An admin approves one user's appeal and the rule is small | Rule generated, validated and loaded by OPA (policy engine) **without restart**. A different user in the same situation, who never appealed, gets **200** |
 | 5 | An appeal whose rule would be large | **409**: waits for the admin, who declines and keeps only the exact exception |
 | 6 | Another large appeal | The admin approves after reviewing its scope and the rule is applied |
-| 7 | The rule file is deleted | **403** again: a rule is rolled back by deleting its file |
+| 7 | The admin revokes the rule | **403** again: the rule file is deleted and the revoke is recorded |
 
-The demo runs on dummy data, the full walkthrough is in [getting started](docs/getting-started.md#3-end-to-end-demo-with-docker).
+The demo is a document app on synthetic company data, the full walkthrough is in [Running the demo](docs/demo.md).
 
 ## Why Corax?
 
@@ -46,7 +46,9 @@ AI sits only where its mistakes cannot become a false allow. The risk check runs
 - **Appeals that generalize**: similar cases (kNN on embeddings) --> candidate rules from the appellant's own facts, narrowest first
 - **Blast-radius tiers**: share of users, new pairs and mean risk decide whether a rule applies at once or waits for an admin
 - **Validated Rego**: syntax, attribute whitelist, the application's own tests, and equivalence with the approved pattern
-- **Live reload, instant revoke**: each rule from an appeal is saved as its own `.rego` file, OPA watches that folder and loads a new rule within milliseconds, without a restart. Deleting the file revokes the rule
+- **Live reload, instant revoke**: each rule from an appeal is saved as its own `.rego` file, OPA watches that folder and loads a new rule within milliseconds, without a restart. Revoking deletes the file and records who did it
+- **Transparent access changes**: every rule is shown to admins as a plain sentence, with who gained access when it was accepted and every later use of that access. Users can list the resources they reached through appeals
+- **Access without asking**: the model's predictions also point at access someone probably needs but nobody granted, for an admin to review. A user can ask for a whole unit without naming a document, and Corax ranks it for the admin
 - **Domain-agnostic**: any application described as typed nodes and edges in two CSV files
 
 ## Results
@@ -69,12 +71,14 @@ python -m hgnn --data output/dummy-data --target-relation accessed --out output/
 python scripts/demo_risk.py --model-dir output/dummy
 ```
 
-End-to-end demo with Envoy, OPA and the service (Docker):
+End-to-end demo with Envoy, OPA, the service and a document app (Docker):
 
 ```bash
-docker compose -f deploy/docker-compose.yml up --build -d
-bash deploy/demo/demo.sh
+docker compose -f deploy/docker-compose.yml run --rm prepare
+docker compose -f deploy/docker-compose.yml up -d --build
 ```
+
+Then open http://localhost:8080 (the document app) and http://localhost:8090 (the Corax console).
 
 Installation and walkthrough: [Getting started](docs/getting-started.md)
 
@@ -83,7 +87,7 @@ Installation and walkthrough: [Getting started](docs/getting-started.md)
 <!-- TODO: GitBook link -->
 Full documentation: **[GitBook - Corax Documentation](https://corax.gitbook.io/documentation)** (also in [`docs/`](docs/README.md)).
 
-## License
+##
 
 Released under the [Apache License 2.0](LICENSE). Copyright 2026 The Corax Authors.
 

@@ -8,3 +8,7 @@ __pycache__/
 output/
 datasets/
 opa.exe
+
+# The web frontend (demo/web): npm packages and the build
+node_modules/
+demo/web/dist/

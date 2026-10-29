@@ -68,10 +68,10 @@ def run_appeal(service: AppealService, title: str, user: str, obj: str, wanted: 
     record = service.create(user, obj, ACTION, None, "demo_admin")
     print(f"  {record['id']}: exception written; candidates, narrowest first:")
     for c in record["candidates"][:4]:
-        print(f"    #{c['index']} {c['users']:>4} users {c['pairs']:>5} pairs  {c['pattern']}")
+        print(f"    #{c['index']} {c['users']:>4} users {c['pairs']:>5} pairs  {c['description']}")
 
     choice = pick(record, wanted) if wanted else None
-    print(f"  admin picks {'#' + str(choice) if choice else 'no rule (exception only)'}")
+    print(f"  admin accepts {'#' + str(choice) if choice else 'no rule (exception only)'}")
     try:
         result = service.confirm(record["id"], choice, False, "demo_admin")
     except AppealError as error:
@@ -79,6 +79,9 @@ def run_appeal(service: AppealService, title: str, user: str, obj: str, wanted: 
         print(f"  -> {error.status}: {error.message}")
         if scope:
             print(f"     tier {scope['tier']}: {'; '.join(scope['reasons'])}")
+        if "affected" in error.detail:
+            a = error.detail["affected"]
+            print(f"     would give access to {a['users']} users, {a['objects']} objects")
         return {"status": error.status, "tier": scope.get("tier")}
 
     print(f"  -> {result['status']}")
@@ -86,11 +89,15 @@ def run_appeal(service: AppealService, title: str, user: str, obj: str, wanted: 
         s = result["chosen"]["scope"]
         print(f"     tier {s['tier']}: {s['users']} users, {s['pairs']} pairs, mean risk {s['mean_risk']:.2f}")
         print("     validation: " + ", ".join(f"{c['name']} {'ok' if c['ok'] else 'FAILED'}" for c in result["validation"]))
+        for u in service.granted(record["id"])["rule"]["access"]["by_user"][:3]:
+            print(f"     gained access: {u['user']} -> {', '.join(u['objects'])}")
     return {"status": result["status"], "tier": result.get("chosen", {}).get("scope", {}).get("tier")}
 
 
-def opa_allows(opa: str, out: Path, user: str, obj: str) -> bool:
-    (out / "input.json").write_text(json.dumps({"user": {"id": user}, "resource": {"id": obj}, "action": ACTION}), encoding="utf-8")
+# resource_type: the written files hold only for the type of the appealed object, as a route would send it
+def opa_allows(opa: str, out: Path, user: str, obj: str, resource_type: str) -> bool:
+    resource = {"id": obj, "type": resource_type}
+    (out / "input.json").write_text(json.dumps({"user": {"id": user}, "resource": resource, "action": ACTION}), encoding="utf-8")
     allowed = False
     for package in ("generated", "exceptions"):
         result = subprocess.run(
@@ -132,7 +139,7 @@ def demo(model_dir: Path, opa: str, out: Path) -> bool:
     print("\n=== OPA on the written files")
     ok = [one == {"status": "rule_applied", "tier": "small"}, two == {"status": 409, "tier": "large"}, three["status"] == "exception_only"]
     for user, obj, want, why in checks:
-        got = opa_allows(opa, out, user, obj)
+        got = opa_allows(opa, out, user, obj, service.resource_type)
         ok.append(got == want)
         print(f"  {user:18} -> {obj:15} {'allow' if got else 'deny ':5}  {'✓' if got == want else '✗'}  {why}")
 

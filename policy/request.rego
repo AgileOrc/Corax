@@ -59,7 +59,13 @@ route_matches(path) if {
 corax_routes := [
 	{"method": "POST", "path": "/corax/appeals", "action": "corax.appeal.create", "resource_type": "appeal"},
 	{"method": "GET", "path": "/corax/appeals/:id", "action": "corax.appeal.read", "resource_type": "appeal"},
+	{"method": "GET", "path": "/corax/appeals/:id/candidates/:candidate", "action": "corax.appeal.read", "resource_type": "appeal"},
 	{"method": "POST", "path": "/corax/appeals/:id/confirm", "action": "corax.appeal.confirm", "resource_type": "appeal"},
+	{"method": "POST", "path": "/corax/appeals/:id/revoke", "action": "corax.appeal.revoke", "resource_type": "appeal"},
+	{"method": "GET", "path": "/corax/rules", "action": "corax.rules.read", "resource_type": "rules"},
+	{"method": "GET", "path": "/corax/suggestions", "action": "corax.suggestions.read", "resource_type": "suggestions"},
+	{"method": "POST", "path": "/corax/rank", "action": "corax.rank.read", "resource_type": "suggestions"},
+	{"method": "GET", "path": "/corax/me/access", "action": "corax.me.access", "resource_type": "access"},
 ]
 
 matched_routes contains r if {

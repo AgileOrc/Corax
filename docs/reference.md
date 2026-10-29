@@ -10,11 +10,18 @@ FastAPI service called by OPA and by admins. It reads the folder written by `hgn
 
 | Endpoint | Caller | Does |
 |---|---|---|
-| `POST /risk` | OPA (`http.send`), only after the policy allowed a request | Returns `risk = 1 − σ(h_user · h_object)` from the HGNN embeddings |
+| `POST /risk` | OPA (`http.send`), only after the policy allowed a request | Returns `risk = 1 − σ(h_user · h_object)` from the HGNN embeddings, and logs the use when the access came from an appeal |
+| `POST /usage` | OPA, when an appeal exception allowed a request | Logs the use of the exception, which skips `/risk` |
 | `GET /health` | Checks, demo | Model info: target edge type, risk threshold, number of users and objects |
-| `POST /corax/appeals` | Admin, through Envoy and OPA | Writes the exact exception at once, returns similar cases and candidate patterns |
+| `POST /corax/appeals` | Admin, through Envoy and OPA | Writes the exact exception at once, returns similar cases and candidate rules, each with its scope and tier. Refused with 409 when the user already has the access. With `dry_run`, writes nothing and returns what the appeal would find |
 | `GET /corax/appeals/{id}` | Admin | The appeal record and its history (audit log) |
+| `GET /corax/appeals/{id}/candidates/{n}` | Admin | Preview: who would gain access to what if the admin accepted candidate `n`. Nothing is written |
 | `POST /corax/appeals/{id}/confirm` | Admin | Writes the rule the admin accepted as a validated rule, or keeps only the exception |
+| `POST /corax/appeals/{id}/revoke` | Admin | Deletes the rule (and, if asked, the exception) and records who did it |
+| `GET /corax/rules` | Admin | Every rule and exception from an appeal still in effect: who gained access and how it was used, as data and as plain sentences |
+| `GET /corax/me/access` | Any user with a valid token | The resources this user can reach through appeals. The user comes only from the token |
+| `GET /corax/suggestions?user=&limit=` | Admin | Access the model expects but nobody granted yet, for an admin to review. Nothing is written |
+| `POST /corax/rank` | Admin | The objects linked to a node (e.g. a department) that a user cannot reach yet, ranked for that user |
 
 Concepts: [Risk score](how-it-works.md#risk-score), [Appeal path](how-it-works.md#appeal-path).
 
@@ -36,6 +43,8 @@ CORAX_MODEL_DIR=output/exp-hard50 uvicorn main:app --app-dir service --port 8000
 | `POLICY_DIR` | none | The application's policy folder. Its `opa test` must still pass |
 | `OBJECT_IDENTITY` | `false` | Allow "object is <id>" in candidates (objects that are systems, as in the Amazon data) |
 | `APPEAL_CANDIDATES` | `8` | How many candidate patterns an appeal returns |
+| `APPEAL_SIMILAR_MIN`, `APPEAL_SIMILAR_MAX`, `APPEAL_SIMILAR_MARGIN` | `5`, `30`, `0.03` | The similar cases of an appeal: every case at most the margin less similar than the closest one, at least the minimum and at most the maximum of them. An appeal among many near identical cases gets more of them |
+| `APPEAL_RESOURCE_TYPE` | the object type of the model's target edge | The `resource_type` that rules and exceptions from appeals hold for. Set it when the routes name the type differently from the graph |
 | `AUTO_APPLY_MAX_USER_SHARE` | `0.4` | Share of all users (0 to 1, e.g. `0.5` = 50%) that may get new access. Above it a rule is "large" |
 | `AUTO_APPLY_MAX_PAIRS`, `AUTO_APPLY_MAX_MEAN_RISK` | `50`, `0.5` | New (user, object) pairs and their mean risk. Above either a rule is "large" |
 
@@ -56,15 +65,16 @@ Then recreate the service with `docker compose -f deploy/docker-compose.yml up -
 AUTO_APPLY_MAX_USER_SHARE=0.5 CORAX_MODEL_DIR=output/dummy uvicorn main:app --app-dir service --port 8000
 ```
 
-The cases of `deploy/demo/demo.sh` are written for the default limits. With other limits an appeal
-may change tier, for example the large one in case 5 may become small.
+The document app demo sets `AUTO_APPLY_MAX_USER_SHARE` to `0.06` in `deploy/docker-compose.yml`, which is 5 of
+its model's 86 employees. Its walkthrough ([docs/demo.md](demo.md)) is written for that limit. With other limits an
+appeal may change tier.
 
 Appeals need `graph.json` and `access.json` in the model folder. Without them only `/risk` runs.
 
 ### `POST /risk`
 
 ```json
-{"user": "user_0", "object": "resource_HOST_100"}
+{"user": "user_0", "object": "resource_HOST_100", "action": "read"}
 ```
 
 ```json
@@ -74,22 +84,94 @@ Appeals need `graph.json` and `access.json` in the model folder. Without them on
 - `high_risk` is true when `risk > threshold`. OPA only reads `high_risk`.
 - If the user or object has no embedding, `risk` is `null`, `high_risk` is false and `reason`
   says which one is unknown. The policy decision stands.
+- `action` is optional. OPA sends it so a use of access from an appeal is logged for the right rule.
+- When the pair was opened by a rule from an appeal and the risk is not high, the request goes through,
+  so the service appends it to `appeals/<id>-usage.jsonl`.
 - The service has no authentication. It must only be reachable by OPA (internal network).
+
+### `POST /usage`
+
+Same body as `/risk`. OPA calls it only when an appeal exception allowed the request, because exceptions
+skip `/risk`. It only writes to the usage log and never changes a decision. Like `/risk`, it has no
+authentication and must stay on the internal network.
 
 ### Appeals
 
 ```
 POST /corax/appeals                {"user": "alice", "object": "report_105", "action": "read_report", "reason": "..."}
   → 201 {"id": "appeal-0001", "status": "exception_applied", "neighbours": [...],
-         "candidates": [{"index": 1, "pattern": "...", "users": 3, "pairs": 12, "support": 0.6, ...}, ...]}
+         "exception": {"description": "alice may read_report report_105, an exception for this one report only."},
+         "candidates": [{"index": 1, "description": "An employee may ...", "pattern": "...", "users": 3, "pairs": 12, ...}, ...]}
+
+GET  /corax/appeals/appeal-0001/candidates/3
+  → 200 {"description": "...", "scope": {...}, "affected": {"users": 6, "objects": 45, "by_user": [{"user": "bob", "objects": [...]}, ...]}}
 
 POST /corax/appeals/appeal-0001/confirm   {"candidate": 3, "acknowledge_scope": false}
-  → 200 {"status": "rule_applied", "chosen": {...scope, tier...}, "validation": [...]}
-  → 409 when the rule is large and acknowledge_scope is false (the scope is in the response)
+  → 200 {"status": "rule_applied", "chosen": {"description": "...", "scope": {...}}, "validation": [...]}
+  → 409 when the rule is large and acknowledge_scope is false: the description, the scope and the first
+        20 users who would gain access are in the response
   → 422 when the rule fails validation (nothing is written)
 POST /corax/appeals/appeal-0001/confirm   {"candidate": null}
   → 200 {"status": "exception_only"}
+
+POST /corax/appeals/appeal-0001/revoke    {"exception": false}
+  → 200 {"status": "rule_revoked", ...}   (exception: true also removes the appellant's exception)
+  → 409 when nothing is active to revoke
 ```
+
+- `description` is a plain-language sentence built from the same predicates as the Rego file, for the
+  admin to read. OPA still enforces the Rego file. `pattern` is the same rule in technical form.
+- When access is granted (the exception at once, the rule when the admin accepts it), the service writes
+  a snapshot of who gained access to what: `appeals/<id>-granted.json`. Every later use of that access
+  is appended to `appeals/<id>-usage.jsonl`.
+- Revoking through the endpoint deletes the file and records who revoked it and when. Deleting the file
+  by hand also removes the rule, but it is not recorded, and `GET /corax/rules` flags it.
+
+### What the admin and the user see
+
+`GET /corax/rules` returns one entry per rule or exception still in effect, with a `summary` in plain
+language:
+
+```
+A lecturer may read the grades of a student when the lecturer and the student have the same program and the lecturer is a head of program.
+Approved as a rule by admin_rina on 27 Oct 2026 10:00 UTC.
+6 people gained access to 45 students.
+Used 1 time by 1 person:
+  27 Oct 2026 10:01 UTC  lecturer_head_P2 read the grades of student_P2_14
+```
+
+`GET /corax/me/access` returns only the resources, for the user of the token:
+
+```json
+{"user": "lecturer_head_P2", "resources": ["student_P2_00", "student_P2_01", "student_P2_04", "student_P2_14", "student_P2_16", "student_P2_19"]}
+```
+
+It lists only access from appeals. Access from the application's own rules is not listed.
+
+### Suggested access and ranking a unit
+
+The model was trained to predict access. Besides denying pairs that do not fit, its predictions point at
+access a user probably needs but nobody granted. Both endpoints score a pair the same way: the model's
+risk, and how many of the user's 10 most similar users can already reach the object (from the access
+history and from appeals). Neither writes anything: an admin gives access through the appeal flow.
+
+```
+GET  /corax/suggestions?limit=20
+  → 200 [{"user": "bob", "object": "report_210", "risk": 0.08, "peers": {"with_access": 7, "of": 10},
+          "description": "7 of the 10 people most like bob can open report_210."}, ...]
+
+POST /corax/rank   {"user": "bob", "relation": "owned_by", "node": "department_finance"}
+  → 200 {"objects": [...ranked as above, every object of the unit bob cannot reach yet...],
+         "warning": null | "None of the people most like this user can open anything here. ..."}
+```
+
+- A pair is suggested when its risk is at most the threshold and at least half of the 10 peers can reach
+  the object. Both numbers are design choices, not measured values (`service/suggest.py`).
+- `rank` lists every object of the unit, best first, and warns when no peer can reach any of them: the
+  unit may be the wrong one.
+- `suggestions` scans every user against every object. Above 2,000,000 pairs it answers 422 and must be
+  asked for one user (`?user=`).
+- Only admins call them: the results name objects the user cannot open.
 
 - The exception (`<id>-exception.rego`) is written as soon as the appeal is created, the rule
   (`<id>-rule.rego`) only after the admin accepts one of the proposed rules. Both are validated with opa first and
@@ -108,7 +190,7 @@ even though OPA already did, so calling corax-service directly does not bypass t
 | Check | Result |
 |---|---|
 | No token, not `Bearer`, bad signature, expired, wrong `iss` / `aud`, no `exp` or `sub` | 401 |
-| Valid token, `sub` not in `corax.config.admin.users` | 403 |
+| Valid token, `sub` not in `corax.config.admin.users` | 403, except for `GET /corax/me/access` |
 | `CORAX_CONFIG` not set or has no `corax.config.jwt` | 503 (fails closed) |
 
 - Key, issuer, audience and admin list come from the same `data.json` as OPA, re-read when the
@@ -127,11 +209,13 @@ Envoy ext_authz input
   1. verify the JWT                      → user.id = sub
   2. match method + path to a route      → action, resource {type, id, ...}
   3. admin_allow     = corax.* action AND user in config.admin.users   (Corax admin routes)
+     self_allow      = corax.me.access AND a valid token                (a user's own access list)
      exception_allow = data.app.exceptions.allow  (the exact pair an admin approved in an appeal)
      policy_allow    = data.app.authz.allow       (the application's rules)
                     OR data.app.generated.allow   (rules added through appeals)
   4. ai_high_risk = POST corax-service /risk            (only when policy_allow and not an exception)
-  5. allow = admin_allow OR exception_allow OR (policy_allow AND NOT ai_high_risk)
+     POST corax-service /usage                         (only when exception_allow, for the usage log)
+  5. allow = admin_allow OR self_allow OR exception_allow OR (policy_allow AND NOT ai_high_risk)
 ```
 
 | File | Content |
@@ -169,6 +253,7 @@ Appeals write two kinds of files to `policies/generated/`, both defining `allow`
 | `routes` | `method`, `path` with `:name` parameters, `action`, `resource_type`. Exactly one route must match, otherwise the request is denied. The `:id` parameter is the object sent to corax-service |
 | `ai.url`, `ai.timeout` | corax-service address and `http.send` timeout (default `20ms`). Without `ai`, no risk check is made |
 | `admin.users` | User ids (JWT `sub`) allowed to use the Corax admin routes. Without it, nobody is an admin |
+| `labels` | Optional readable names for the plain-language sentences: `actions`, `types`, `relations` and `nodes`, each a map from id to text, e.g. `{"actions": {"read_report": "read"}, "nodes": {"role_manager": "manager"}}`. Read by corax-service only, OPA ignores it. Without it the ids are used |
 
 **3. Graph data:** `hgnn` writes `graph.json` (node id → relation → destination ids).
 Generated rules read it as `data.corax.graph`, so copy it to `<policy folder>/corax/graph/data.json`.
@@ -183,9 +268,15 @@ by corax-service, so Envoy routes `/corax/` there.
 |---|---|
 | `POST /corax/appeals` | `corax.appeal.create` |
 | `GET /corax/appeals/:id` | `corax.appeal.read` |
+| `GET /corax/appeals/:id/candidates/:candidate` | `corax.appeal.read` |
 | `POST /corax/appeals/:id/confirm` | `corax.appeal.confirm` |
+| `POST /corax/appeals/:id/revoke` | `corax.appeal.revoke` |
+| `GET /corax/rules` | `corax.rules.read` |
+| `GET /corax/me/access` | `corax.me.access`, any user with a valid token |
+| `GET /corax/suggestions` | `corax.suggestions.read` |
+| `POST /corax/rank` | `corax.rank.read` |
 
-Only `config.admin.users` may call them. For `corax.*` actions the application's rules, appeal
+Only `config.admin.users` may call them, except `corax.me.access`, which lists only the caller's own access. For `corax.*` actions the application's rules, appeal
 rules and exceptions are ignored, so no generated rule can make someone an admin. Admin actions do
 not call the AI risk check.
 
@@ -203,6 +294,7 @@ not call the AI risk check.
 | Path | Value |
 |---|---|
 | `corax/authz/allow` | boolean |
+| `corax/authz/allowed_objects` | Of `input.objects`, the ones the policy (the application's rules, rules from appeals and exceptions) lets `input.user` reach with `input.action`, without the AI check. Input: `{"user", "action", "resource_type", "objects"}`. For an application that lists only what someone may open, through OPA's API on the internal network |
 | `corax/authz/result` | `{"allowed": bool, "headers": {"x-corax-user": "..."}, "dynamic_metadata": {"corax_reason": "...", "corax_risk": 0.12}}`, for opa-envoy-plugin and Envoy access logs |
 
 ### Test
@@ -271,7 +363,6 @@ evaluate/  loads the saved model, never trains
 |---|---|
 | `check_env.py` | Checks that the Python environment has the required packages |
 | `demo_appeal.py` | Demo on the dummy data: three appeals (small rule written, large rule refused with 409, exception only) end to end, then opa evaluates the written Rego. Nothing is trained |
-| `make_token.py` | Prints a demo JWT signed with the HS256 secret of a Corax config (`deploy/demo/data.json` by default) |
 | `demo_risk.py` | Demo: the risk score on held-out pairs the model never saw, next to the true answer. Nothing is trained or written |
 | `similar_cases.py` | For one appealed (user, object) pair: the kNN similar cases, the candidate patterns and, with `--pick N`, the tier, Rego and validation of candidate N. Nothing is written |
 | `prepare/make_dummy.py` | Writes the small dummy data graph with two appeal scenarios, for tests and local trials |
@@ -279,6 +370,8 @@ evaluate/  loads the saved model, never trains
 | `prepare/make_amazon_scenarios.py` | Hides inferred role-based rules (title → resource) in the Amazon graph, for evaluating appeals |
 | `prepare/convert_xu_stoller.py` | Converts a Xu & Stoller ABAC policy (`.abac`) with one rule hidden (`--hide-rule N`) or each rule in turn (`--all-rules`) |
 | `prepare/appeal_scenarios.py` | Reads and writes `scenarios.json` (used by the scripts above) |
+| `prepare/make_enterprise.py`, `prepare/make_office.py` | The synthetic enterprise and office graphs of the document app demo ([scripts/README.md](../scripts/README.md)) |
+| `demo_gateway.py`, `demo_office.py`, `demo_office_cases.py`, `demo_backend.py` | The document app demo: prepare its graph and model, then send its cases through the Docker gateway ([docs/demo.md](demo.md)) |
 | `evaluate/evaluate_hgnn.py` | Test metrics of the risk score and the risk threshold calibration table |
 | `evaluate/evaluate_knn.py` | kNN precision@k, rank of the hidden rule among the candidate patterns, and its tier |
 

@@ -1,4 +1,11 @@
-# Only service/ goes into the image; datasets/ and output/ are gigabytes.
-*
-!service/
+# Docker builds use the repository root as context (deploy/service.Dockerfile, deploy/tools.Dockerfile): send only the
+# source the image copies, never the virtual environment, datasets or outputs.
+.git
+.venv
+**/.venv
 **/__pycache__
+.pytest_cache
+output
+datasets
+tests
+docs

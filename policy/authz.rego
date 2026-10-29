@@ -21,6 +21,8 @@ default allow := false
 
 allow if admin_allow
 
+allow if self_allow
+
 allow if exception_allow
 
 allow if {
@@ -33,6 +35,13 @@ corax_action if startswith(request.action, "corax.")
 admin_allow if {
 	corax_action
 	user_id in object.get(object.get(config, "admin", {}), "users", [])
+}
+
+# Any user with a valid token may list their own access. The service takes the user from the same
+# token, so this never shows another user's access.
+self_allow if {
+	request.action == "corax.me.access"
+	user_id
 }
 
 exception_allow if {
@@ -50,6 +59,24 @@ policy_allow if {
 	data.app.generated.allow with input as request
 }
 
+# --- Objects a user may reach ------------------------------------------------
+
+# Of input.objects, those the policy allows input.user to reach with input.action: the application's
+# rules, rules from appeals and exceptions, without the AI check. An application asks it through
+# OPA's API on the internal network to list only what someone may open, so it never shows the
+# titles of the rest. Input: {"user": "...", "action": "...", "resource_type": "...", "objects": [...]}
+allowed_objects contains id if {
+	not startswith(input.action, "corax.")
+	some id in input.objects
+	allowed_by_policy({"user": {"id": input.user}, "action": input.action, "resource": {"type": input.resource_type, "id": id}})
+}
+
+allowed_by_policy(req) if data.app.authz.allow with input as req
+
+allowed_by_policy(req) if data.app.generated.allow with input as req
+
+allowed_by_policy(req) if data.app.exceptions.allow with input as req
+
 # --- AI risk check ---------------------------------------------------------
 
 # Called only when the policy allowed the request, it is not an appeal exception,
@@ -58,12 +85,26 @@ risk_response := http.send({
 	"method": "POST",
 	"url": concat("", [config.ai.url, "/risk"]),
 	"headers": {"Content-Type": "application/json"},
-	"body": {"user": request.user.id, "object": request.resource.id},
+	"body": {"user": request.user.id, "object": request.resource.id, "action": request.action},
 	"timeout": object.get(config.ai, "timeout", "20ms"),
 	"raise_error": false,
 }) if {
 	policy_allow
 	not exception_allow
+}
+
+# An appeal exception skips the risk check, so the service is told separately that the access was
+# used, for the admin's usage log. The answer never changes the decision.
+usage_response := http.send({
+	"method": "POST",
+	"url": concat("", [config.ai.url, "/usage"]),
+	"headers": {"Content-Type": "application/json"},
+	"body": {"user": request.user.id, "object": request.resource.id, "action": request.action},
+	"timeout": object.get(config.ai, "timeout", "20ms"),
+	"raise_error": false,
+}) if {
+	exception_allow
+	config.ai.url
 }
 
 ai_checked if risk_response.status_code == 200
@@ -86,6 +127,8 @@ reason := "missing or invalid token" if {
 	not route
 } else := "admin action" if {
 	admin_allow
+} else := "own access list" if {
+	self_allow
 } else := "admin only" if {
 	corax_action
 } else := "allowed by appeal exception" if {
@@ -102,6 +145,10 @@ default risk_metadata := {}
 
 risk_metadata := {"corax_risk": ai_risk}
 
+default usage_metadata := {}
+
+usage_metadata := {"corax_usage_logged": usage_response.status_code == 200} if usage_response
+
 # The verified user id is passed to the upstream service (corax-service uses it for the appeal audit log).
 default headers := {}
 
@@ -110,5 +157,5 @@ headers := {"x-corax-user": user_id} if allow
 result := {
 	"allowed": allow,
 	"headers": headers,
-	"dynamic_metadata": object.union({"corax_reason": reason}, risk_metadata),
+	"dynamic_metadata": object.union(object.union({"corax_reason": reason}, risk_metadata), usage_metadata),
 }

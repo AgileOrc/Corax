@@ -16,6 +16,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "service"))
 
+from appeals import affected
+from describe import describe_rule
 from graph import GraphData
 from patterns import candidates, opened_pairs
 from risk import RiskModel
@@ -88,10 +90,19 @@ def show_pick(args, model, graph, index, chosen) -> None:
     )
     scope = assess(opened, model, TierLimits(args.max_user_share, args.max_pairs, args.max_mean_risk))
     mean_risk = "-" if scope.mean_risk is None else f"{scope.mean_risk:.2f}"
+    user_type, _, object_type = model.metadata["target_edge_type"]
+    sentence = describe_rule(chosen.predicates, args.action, user_type, object_type, graph.relation_types())
     print(f"\npick #{args.pick}: {chosen.text()}")
+    print(f"  in plain language: {sentence}")
     print(f"tier {scope.tier}: {scope.users} users ({scope.user_share:.0%} of all), {scope.pairs} pairs, mean risk {mean_risk}")
     for reason in scope.reasons:
         print(f"  needs acknowledgement: {reason}")
+    who = affected(opened)
+    print("would gain access:")
+    for entry in who["by_user"][:10]:
+        print(f"  {entry['user']}: {', '.join(entry['objects'])}")
+    if who["users"] > 10:
+        print(f"  and {who['users'] - 10} more users")
 
     exception = render_exception("appeal-preview", args.user, args.action, args.object)
     rule = render_rule(

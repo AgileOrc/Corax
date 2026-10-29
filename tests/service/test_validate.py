@@ -155,3 +155,31 @@ def test_write_atomic_replaces_the_file(tmp_path):
 
     assert path.read_text(encoding="utf-8") == "new"
     assert [p.name for p in tmp_path.iterdir()] == ["appeal-0001-rule.rego"]
+
+
+def test_rule_limited_to_the_resource_type_passes_every_check(opa):
+    rego = render_rule("appeal-0001", "read", HEAD_RULE, resource_type="student")
+
+    report = validate(rego, "app.generated", "read", GRAPH, expected_for(HEAD_RULE), opa, None, "student")
+
+    assert report.ok, report.checks
+    assert names(report)[-2:] == [("equivalence", True), ("resource type", True)]
+
+
+def test_rule_for_any_resource_type_fails_the_type_check(opa):
+    # the pattern alone also holds for a "project" whose id happens to have the same relations
+    rego = render_rule("appeal-0001", "read", HEAD_RULE)
+
+    report = validate(rego, "app.generated", "read", GRAPH, expected_for(HEAD_RULE), opa, None, "student")
+
+    assert names(report)[-2:] == [("equivalence", True), ("resource type", False)]
+    assert "allowed as another type" in report.checks[-1].detail
+
+
+def test_exception_limited_to_the_resource_type_passes(opa):
+    expected = {p: p == APPEAL for p in expected_for(HEAD_RULE)}
+    rego = render_exception("appeal-0001", APPEAL[0], "read", APPEAL[1], "student")
+
+    report = validate(rego, "app.exceptions", "read", GRAPH, expected, opa, None, "student")
+
+    assert report.ok, report.checks
