@@ -6,7 +6,7 @@ const BUTTON = {
   danger: "bg-no text-white border-transparent",
   ok: "bg-ok text-white border-transparent",
 };
-const SIZE = { md: "px-4 py-2 text-[15px]", sm: "px-2.5 py-1 text-[13px]" };
+const SIZE = { md: "px-4 py-2 text-[15px]", sm: "px-3 py-1.5 text-sm" };
 
 // A button, or a link that looks like one when href is given.
 export function Button({ variant = "primary", size = "md", href, className = "", ...rest }) {

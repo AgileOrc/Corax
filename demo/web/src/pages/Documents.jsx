@@ -10,20 +10,17 @@ import { forgetOnSignOut } from "../session.js";
 import { sharedWithMe } from "../shared.js";
 import { useSession } from "../SessionContext.jsx";
 
-// The filters and the departments of the catalog, kept between visits
 const NO_FILTERS = { q: "", department: "", classification: "", mine: false };
 let kept = NO_FILTERS;
 let departments = null;
 forgetOnSignOut(() => { kept = NO_FILTERS; departments = null; });
 
-// The catalog: an employee sees only what the policy lets them open (the app asks OPA), an admin sees
-// every document.
 export default function Documents() {
   const { user } = useSession();
   const admin = user.kind === "admin";
   const [filters, setFilters] = useState(kept);
   const [units, setUnits] = useState(departments);
-  const [found, setFound] = useState(null);  // {documents} or {error}
+  const [found, setFound] = useState(null);
   const [fresh, setFresh] = useState(0);
   const [preview, setPreview] = useState(null);
 
@@ -41,7 +38,6 @@ export default function Documents() {
     return () => { current = false; };
   }, [admin]);
 
-  // search as the user types, a moment after the last key
   useEffect(() => {
     kept = filters;
     let current = true;
@@ -108,8 +104,8 @@ export default function Documents() {
               {documents.map((d) => (
                 <DocRow key={d.id} doc={d} tags={d.in_my_projects ? ["Your project"] : []}
                         actions={admin ? null : <>
-                          <Button variant="ghost" size="sm" onClick={() => setPreview(d.id)}>Preview</Button>
-                          <Button size="sm" href={`#/documents/${d.id}`}>Open</Button>
+                          <Button variant="ghost" size="sm" onClick={() => setPreview(d.id)} className="font-medium!">Preview</Button>
+                          <Button size="sm" href={`#/documents/${d.id}`} className="hover:text-accent! hover:bg-transparent! hover:border-accent/80!">Open</Button>
                         </>} />
               ))}
             </ul>
@@ -122,7 +118,6 @@ export default function Documents() {
 
 const Label = (props) => <label className="mb-1 block text-[13px] font-medium text-muted" {...props} />;
 
-// The summary of a document, through the gateway like the document itself
 function Preview({ id, onClose }) {
   const [answer, setAnswer] = useState(null);
   useEffect(() => {

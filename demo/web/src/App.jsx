@@ -1,6 +1,3 @@
-// Corax Demo: the web frontend of the document app (demo/app), protected by Corax. Every API call
-// goes through the gateway (Envoy -> OPA -> the AI risk check) like any other client's; only the page's
-// files and POST /auth/login skip the check.
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { onApiTrouble } from "./api.js";
@@ -47,22 +44,23 @@ const EMPLOYEE_LINKS = [["#/documents", "Documents"], ["#/shared", "Shared with 
 function TopBar({ user, hash, onSignOut }) {
   const admin = user.kind === "admin";
   return (
-    <header className="sticky top-0 z-10 flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-line bg-panel px-4 py-2.5 sm:flex-nowrap sm:px-6">
-      <a href={home(user)} className="whitespace-nowrap text-base font-semibold text-ink hover:no-underline">Corax Demo</a>
-      <nav className="order-3 flex w-full gap-1 overflow-x-auto sm:order-none sm:w-auto sm:flex-1">
+    <header className="sticky top-0 z-10 flex flex-wrap items-center gap-x-5 border-b border-line px-4 bg-panel sm:flex-nowrap lg:px-8">
+      <a href={home(user)} className="whitespace-nowrap py-3 text-base font-semibold text-ink hover:no-underline">Corax Demo</a>
+      {/* the links fill the bar's height, so the line under the open page sits on the bar's bottom edge */}
+      <nav className="order-3 flex w-full gap-1 self-stretch overflow-x-auto sm:order-none sm:w-auto sm:flex-1">
         {(admin ? ADMIN_LINKS : EMPLOYEE_LINKS).map(([href, label]) => (
           <a key={href} href={href}
-             className={`whitespace-nowrap rounded-lg px-3 py-1.5 font-medium hover:no-underline ${hash.startsWith(href) ? "bg-accent-soft text-accent" : "text-muted hover:bg-panel-2 hover:text-ink"}`}>
+             className={`relative flex items-center whitespace-nowrap px-5 py-5 font-medium hover:no-underline after:absolute after:inset-x-1 after:bottom-0 after:h-[3px] after:rounded-t-full ${hash.startsWith(href) ? "text-accent after:bg-accent" : "text-muted hover:text-ink"}`}>
             {label}
           </a>
         ))}
       </nav>
-      <div className="ml-auto flex items-center gap-2.5 text-sm text-muted">
+      <div className="ml-auto flex items-center gap-7 py-2 text-sm text-muted">
         <span className="hidden md:inline">
           <b className="font-semibold text-ink">{user.name}</b>
-          {admin ? " · reviews access requests" : ` · ${titled(user.role)}, ${titled(user.department)} · ${place(user.site, user.region)}`}
+          {admin ? " · reviews access requests" : `  |  ${titled(user.role)} - ${titled(user.department)}  |  ${place(user.site, user.region)}`}
         </span>
-        <Button variant="ghost" size="sm" onClick={() => onSignOut()}>Sign out</Button>
+        <Button variant="ghost" size="md" className="bg-accent/5! border-accent/15!" onClick={() => onSignOut()}>Sign out</Button>
       </div>
     </header>
   );
@@ -94,7 +92,6 @@ export default function App() {
     });
   }, [signOut, toast]);
 
-  // signed out: only the sign-in page; signed in: no sign-in page
   const signedIn = session.valid();
   const redirect = !signedIn && hash !== "#/login" ? "#/login"
     : signedIn && ["#/", "#/login", "#"].includes(hash) ? home(session.user) : null;
@@ -112,7 +109,6 @@ export default function App() {
     <SessionContext.Provider value={context}>
       <div className="flex min-h-screen flex-col">
         {signedIn && user && <TopBar user={user} hash={hash} onSignOut={signOut} />}
-        {/* the width of every page: wide, with a margin that grows on larger screens */}
         <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-6 sm:px-8 lg:px-12">
           {Page
             ? <Page key={hash} params={params} />

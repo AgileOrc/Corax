@@ -46,8 +46,6 @@ export default function Document({ params: [id] }) {
     );
   }
 
-  // A document that does not exist and one the user may not open look the same: the page shows no
-  // title or details, so nobody learns from it which documents exist.
   if (answer.status !== 403 && answer.status !== 404) {
     return <><Back /><div className="mt-3"><Notice kind="warn"><p>{errorText(answer)}</p></Notice></div></>;
   }
