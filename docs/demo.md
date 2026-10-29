@@ -122,7 +122,7 @@ OPA's logs through the Docker socket, so it is a tool for your own machine only.
 
 ## 4. Demo 2: the Document Hub by hand
 
-Open **http://localhost:8080** on a fresh stack. Every password is **`corax-demo`**; the username is `e` and the
+Open **http://localhost:8080** on a fresh stack. Every password is **`123456`**; the username is `e` and the
 employee number (`e049`), and the admin is `admin_01`. The sign-in page lists a few accounts to click.
 
 | Account | Who | Used in |
@@ -313,7 +313,7 @@ Set these in the terminal before `up` (PowerShell: `$env:NAME="value"`; cmd: `se
 |---|---|---|
 | `CORAX_GATEWAY_PORT` | `8080` | Port of the Document Hub |
 | `CORAX_CONSOLE_PORT` | `8090` | Port of the console |
-| `CORAX_DEMO_PASSWORD` | `corax-demo` | Every account's password; set it before the first `up` (or reset), the app seeds its accounts once |
+| `CORAX_DEMO_PASSWORD` | `123456` | Every account's password; set it before the first `up` (or reset), the app seeds its accounts once |
 
 The limits of a small rule (6% of the model's 86 employees, so 5 people, then 50 new pairs and mean risk 0.5) are
 the service's `AUTO_APPLY_MAX_USER_SHARE`, `AUTO_APPLY_MAX_PAIRS` and `AUTO_APPLY_MAX_MEAN_RISK`. The share is set

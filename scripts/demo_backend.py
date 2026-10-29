@@ -785,7 +785,7 @@ def main() -> None:
     parser.add_argument("--prepared", type=Path, default=PREPARED,
                         help="the graph and the HGNN the stack runs with (default: output/gateway)")  # fmt: skip
     args = parser.parse_args()
-    stack = Stack(args.gateway, os.environ.get(PASSWORD_ENV, "corax-demo"), args.project)
+    stack = Stack(args.gateway, os.environ.get(PASSWORD_ENV, "123456"), args.project)
     data = args.prepared / "data"
     demo = json.loads((data / "demo.json").read_text(encoding="utf-8"))
     scenarios = {s["name"]: s for s in json.loads((data / "scenarios.json").read_text(encoding="utf-8"))["scenarios"]}

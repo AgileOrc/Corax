@@ -29,7 +29,7 @@ and nginx sends a strict Content-Security-Policy (no inline scripts). The token 
 `app/docapp` is the application Corax protects: a document-management API (FastAPI, SQLite in the `appdata`
 volume). On its first start it seeds the database from the enterprise graph (`output/gateway/data`): one account per
 employee and per admin of `demo/data.json`, and the 160 documents, with made-up names, titles and texts. Every
-password is `corax-demo` (`CORAX_DEMO_PASSWORD`); the username is the employee number (`e001`) or the id
+password is `123456` (`CORAX_DEMO_PASSWORD`); the username is the employee number (`e001`) or the id
 (`employee_E001`), the admin's is `admin_01`.
 
 The app has no authorization of its own: every route reaches it only when OPA allowed it, with the actions of
@@ -104,7 +104,7 @@ Try the app with curl:
 
 ```bash
 TOKEN=$(curl -s -X POST localhost:8080/auth/login -H 'Content-Type: application/json' \
-  -d '{"username": "e049", "password": "corax-demo"}' | python -c "import json, sys; print(json.load(sys.stdin)['token'])")
+  -d '{"username": "e049", "password": "123456"}' | python -c "import json, sys; print(json.load(sys.stdin)['token'])")
 curl -H "Authorization: Bearer $TOKEN" 'localhost:8080/documents?department=engineering'
 ```
 

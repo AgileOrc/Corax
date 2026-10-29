@@ -6,7 +6,7 @@ from docapp.main import create_app
 from docapp.settings import Settings
 from fastapi.testclient import TestClient
 
-PASSWORD = "corax-demo"
+PASSWORD = "123456"
 JWT = {"secret": "test-secret-of-the-document-app-tests", "iss": "corax-test", "aud": "corax-test-api"}
 
 

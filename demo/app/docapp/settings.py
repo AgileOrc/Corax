@@ -10,7 +10,7 @@ class Settings:
     corax_config: Path  # demo/data.json: the JWT settings and the admins
     corax_gateway: str = "http://envoy:8080"  # appeals go through the gateway, as the admin
     opa_url: str = "http://opa:8181"  # what someone may open, for the catalog (internal network only)
-    demo_password: str = "corax-demo"  # every seeded account gets it
+    demo_password: str = "123456"  # every seeded account gets it
     password_iterations: int = 100_000
     token_minutes: int = 60
 

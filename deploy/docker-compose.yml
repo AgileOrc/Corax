@@ -9,7 +9,7 @@
 #                         -> app (login, documents, access requests) or service (/corax/appeals...)
 #
 # The app seeds its SQLite database (volume "appdata") from the enterprise graph on the first start;
-# every account's password is CORAX_DEMO_PASSWORD (default corax-demo). It calls /corax/appeals
+# every account's password is CORAX_DEMO_PASSWORD (default 123456). It calls /corax/appeals
 # through Envoy, only with the token of the admin who approves an access request: the app has no
 # Corax account of its own.
 #
@@ -81,7 +81,7 @@ services:
       CORAX_GATEWAY: http://envoy:8080
       # the catalog lists only what the policy lets each employee open (OPA's API, internal network)
       OPA_URL: http://opa:8181
-      DEMO_PASSWORD: ${CORAX_DEMO_PASSWORD:-corax-demo}
+      DEMO_PASSWORD: ${CORAX_DEMO_PASSWORD:-123456}
     volumes:
       - ../output/gateway/data:/seed:ro
       - ../demo/data.json:/config/data.json:ro
@@ -145,7 +145,7 @@ services:
       dockerfile: deploy/tools.Dockerfile
     image: corax-tools
     environment:
-      CORAX_DEMO_PASSWORD: ${CORAX_DEMO_PASSWORD:-corax-demo}
+      CORAX_DEMO_PASSWORD: ${CORAX_DEMO_PASSWORD:-123456}
     volumes:
       - ../output:/corax/output:ro
       - /var/run/docker.sock:/var/run/docker.sock

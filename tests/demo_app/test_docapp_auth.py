@@ -6,7 +6,7 @@ import pytest
 
 @pytest.mark.parametrize("username", ["e001", "E001", "employee_E001"])
 def test_login_by_username_or_id(client, username):
-    answer = client.post("/auth/login", json={"username": username, "password": "corax-demo"})
+    answer = client.post("/auth/login", json={"username": username, "password": "123456"})
 
     assert answer.status_code == 200
     body = answer.json()
@@ -15,14 +15,14 @@ def test_login_by_username_or_id(client, username):
 
 
 def test_token_is_what_opa_and_the_service_verify(client, jwt_settings):
-    token = client.post("/auth/login", json={"username": "e001", "password": "corax-demo"}).json()["token"]
+    token = client.post("/auth/login", json={"username": "e001", "password": "123456"}).json()["token"]
 
     claims = jwt.decode(token, jwt_settings["secret"], algorithms=["HS256"], audience=jwt_settings["aud"], issuer=jwt_settings["iss"])
     assert claims["sub"] == "employee_E001"
     assert claims["exp"] - claims["iat"] == 3600
 
 
-@pytest.mark.parametrize(("username", "password"), [("e001", "wrong"), ("nobody", "corax-demo"), ("", "x")])
+@pytest.mark.parametrize(("username", "password"), [("e001", "wrong"), ("nobody", "123456"), ("", "x")])
 def test_wrong_credentials(client, username, password):
     answer = client.post("/auth/login", json={"username": username, "password": password})
 

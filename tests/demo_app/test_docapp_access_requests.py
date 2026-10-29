@@ -171,7 +171,7 @@ SMALL_APPEAL = (201, {"id": "appeal-0001", "status": "exception_applied",
 
 
 def test_no_account_signs_in_without_being_a_person(client):
-    assert client.post("/auth/login", json={"username": "docapp", "password": "corax-demo"}).status_code == 401
+    assert client.post("/auth/login", json={"username": "docapp", "password": "123456"}).status_code == 401
 
 
 def test_an_admin_revokes_the_rule_through_corax(client, corax, requested, auth):

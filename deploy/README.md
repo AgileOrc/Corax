@@ -38,7 +38,7 @@ With nothing but Docker (Docker Desktop, or Docker with the compose plugin), fro
 docker compose -f deploy/docker-compose.yml run --rm prepare   # graph and HGNN -> output/ (first time a few minutes: builds the tools image)
 docker compose -f deploy/docker-compose.yml up -d --build
 docker compose -f deploy/docker-compose.yml run --rm demo      # 57 cases through the document app, as a log
-# the app: http://localhost:8080 (sign in, e.g. e049 / corax-demo), the Corax console: http://localhost:8090
+# the app: http://localhost:8080 (sign in, e.g. e049 / 123456), the Corax console: http://localhost:8090
 docker compose -f deploy/docker-compose.yml down -v            # -v also drops exceptions, rules and the app's database
 ```
 
