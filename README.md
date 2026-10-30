@@ -1,4 +1,4 @@
-<h1 align="center">Corax</h1>
+<h1 align="center">Corax: Adaptive Access Control for APIs</h1>
 
 <p align="center">
   <img src="docs/assets/header.png" alt="Corax" width="100%">
@@ -142,7 +142,7 @@ heterogeneous GraphSAGE model, an implementation of the method of [Yin et al. (2
 - **Live reload, instant revoke:** Each rule is its own `.rego` file. OPA loads a new one within milliseconds
   without a restart, and revoking deletes the file.
 
-## Quick start
+## Quick Start
 
 All you need is Docker. From the repository root:
 
@@ -155,26 +155,31 @@ The first command generates the demo company and trains the model, which takes a
 second starts the gateway, the policy engine, the Corax service and the document app.
 
 Then open http://localhost:8080 and sign in as Chloe (`e049`) or the administrator (`admin_01`). The sign-in page
-lists the demo accounts, and [Running the demo](docs/demo.md) walks through every scenario. The requirements and
-the full setup are in [Getting started](docs/getting-started.md).
+lists the demo accounts, and [running the demo](docs/demo.md) walks through every scenario. The requirements and
+the full setup are in [Getting Started](docs/getting-started.md).
+
+Without Docker, the same company and model can be explored from Python, without the web app. See
+[Demo without Docker](docs/scripts.md#the-demo-company-without-docker).
 
 ## Documentation
 
 <!-- TODO: GitBook link -->
-- [Getting started](docs/getting-started.md): requirements, the folders, and deployment
-- [Running the demo](docs/demo.md): a guided tour of the document app
-- [Architecture](docs/architecture.md): the request path, the service API, the policy and security
-- [AI model and evaluation](docs/ai-model-and-evaluation.md): how the model works and how the numbers above were measured
-- [Scripts](docs/scripts.md): preparing data, training the model and the demo scripts
-- [References](docs/references.md): the research Corax builds on
+The full documentation is also on [GitBook](https://corax.gitbook.io/documentation).
+
+| # | Page | What it covers |
+|---|---|---|
+| 1 | [Getting started](docs/getting-started.md) | Requirements, the folders, and deployment |
+| 2 | [Running the demo](docs/demo.md) | A guided tour of the document app |
+| 3 | [Architecture](docs/architecture.md) | The request path, the service API, the policy and security |
+| 4 | [AI model and evaluation](docs/ai-model-and-evaluation.md) | How the model works, and how the numbers above were measured |
+| 5 | [Scripts](docs/scripts.md) | Preparing data, training the model, and the demo scripts |
+| 6 | [References](docs/references.md) | The research Corax builds on |
 
 ## License
 
-Released under the [Apache License 2.0](LICENSE). Copyright 2026 The Corax Authors.
+Released under the [Apache License 2.0](LICENSE).
 
-## Authors
-
-<!-- TODO -->
+## Author
 - [AgileOrc](https://github.com/AgileOrc)
+## Contributor
 - [Imkungoingglitch](https://github.com/Imkungoingglitch)
-- [waarsss](https://github.com/waarsss)

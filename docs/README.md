@@ -1,6 +1,6 @@
 # Corax documentation
 
-New to Corax? Start with the [overview](../README.md), then [Getting started](getting-started.md) and
+New to Corax? Start with the [overview](https://github.com/AgileOrc/Corax#readme), then [Getting started](getting-started.md) and
 [Running the demo](demo.md).
 
 | Page | Read it to |

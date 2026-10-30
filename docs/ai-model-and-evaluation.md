@@ -33,19 +33,19 @@ The model is Corax's own implementation of the heterogeneous graph method in [[1
 ### Graph
 
 Corax is not tied to one domain. It reads typed nodes and typed edges from two CSV files
-([data format](scripts.md#data-format)). One edge type is the target. For the example used in these
-docs, a company whose employees read reports:
+([data format](scripts.md#data-format)). One edge type is the target. For the demo company used in
+these docs, whose employees read documents:
 
 | Amazon dataset | Example company |
 |---|---|
-| `user` | `employee` (e.g. `alice`) |
-| `resource` | `report` (the object being accessed, e.g. `report_105`) |
+| `user` | `employee` (e.g. `employee_E049`) |
+| `resource` | `document` (the object being accessed, e.g. `document_D057`) |
 | `department` | `department` |
-| `title` | `role` (`role_manager`, `role_staff`) |
-| `has_potential_access` | `accessed` (employee → report, from allowed requests only) |
+| `title` | `role` (`role_coordinator`, `role_engineer`) |
+| `has_potential_access` | `accessed` (employee → document, from allowed requests only) |
 
-A role is a node, not an attribute, so the graph contains the path `employee → role → employee`
-("both are managers"). This is what lets the model see that two managers are similar.
+A role is a node, not an attribute, so the graph contains the path `employee --> role --> employee`
+("both are coordinators"). This is what lets the model see that two coordinators are similar.
 
 ### Model and training
 
@@ -142,8 +142,9 @@ Policy files change only on disk. OPA's REST API is never used for writes and is
 | `<id>-granted.json`: who gained access to what | `appeals/` | Phase 1 (exception) and phase 2 (rule) |
 | `<id>-usage.jsonl`: every use of that access | `appeals/` | Each allowed request it covers |
 
-The steps in detail use an illustrative example. `alice`, the manager of the sales department, is
-denied `report_105`, a report of that department, because no rule covers managers yet.
+The steps in detail follow the demo's main scenario. `employee_E049` (Chloe Bakker), the coordinator of the
+Engineering department, is denied `document_D057`, a document of that department, because no rule covers
+coordinators yet.
 
 ### 1. Exact exception
 
@@ -151,9 +152,9 @@ denied `report_105`, a report of that department, because no rule covers manager
 
 ```rego
 allow if {
-	input.user.id == "alice"
-	input.resource.id == "report_105"
-	input.action == "read_report"
+	input.user.id == "employee_E049"
+	input.resource.id == "document_D057"
+	input.action == "read"
 }
 ```
 
@@ -173,9 +174,9 @@ predicates:
 
 | Kind | Reads as | Example |
 |---|---|---|
-| `user_has` | user has a value | `user holds role_manager` |
-| `object_has` | object has a value | `object type invoice` |
-| `shared` | user and object share a node | `user.member_of = object.member_of` |
+| `user_has` | user has a value | `user holds role_coordinator` |
+| `object_has` | object has a value | `object classified_as confidential` |
+| `shared` | user and object share a node | `user.works_in = object.owned_by` |
 | `direct` | user is linked to the object | `user owns object` |
 | `object_is` | one specific object (systems in Amazon, off by default) | `object is resource_42` |
 
@@ -190,19 +191,19 @@ and what share of the similar cases it covers:
 
 ```
   #  users      pairs   kNN  pattern
-  1      3         12   20%  user.member_of = object.member_of AND user works_on project_sales_1
-  2      6         45   10%  user.member_of = object.member_of AND user holds role_manager
-  4     28        105   30%  user.member_of = object.member_of
+  1      4         10   10%  user.works_in = object.owned_by AND user holds role_coordinator
+  2     12         40   60%  user.works_in = object.owned_by AND user member_of team_engineering2
+  4    107        153   50%  user.located_in = object.stored_at AND user.works_in = object.owned_by
 ```
 
 Each candidate also comes as a plain-language sentence for the admin, built from the same predicates as the
-Rego file. With the application's optional `labels`, #2 reads:
+Rego file. #1 reads:
 
 ```
-An employee may read a report when the employee and the report have the same department and the employee is a manager.
+An employee may read a document when the employee and the document have the same department and the employee is a coordinator.
 ```
 
-The admin accepts one (here #2) or none (`exception_only`).
+The admin accepts one (here #1, which reaches 4 employees and 10 new accesses) or none (`exception_only`).
 
 ### 4. Tier
 
@@ -229,17 +230,17 @@ as metadata:
 ```rego
 # METADATA
 # title: "appeal-0001"
-# description: "user.member_of = object.member_of AND user holds role_manager"
+# description: "user.works_in = object.owned_by AND user holds role_coordinator"
 # custom:
 #   appeal_id: "appeal-0001"
-#   users: 6
-#   pairs: 45
+#   users: 4
+#   pairs: 10
 #   tier: "small"
 allow if {
-	input.action == "read_report"
-	some n1 in data.corax.graph[input.user.id]["member_of"]
-	n1 in data.corax.graph[input.resource.id]["member_of"]
-	"role_manager" in data.corax.graph[input.user.id]["holds"]
+	input.action == "read"
+	some n1 in data.corax.graph[input.user.id]["works_in"]
+	n1 in data.corax.graph[input.resource.id]["owned_by"]
+	"role_coordinator" in data.corax.graph[input.user.id]["holds"]
 }
 ```
 
@@ -310,7 +311,7 @@ rank lower (5 to 11), because every value of that attribute gives a narrower can
 
 ### Reproduce
 
-- Xu & Stoller: [Scripts → Xu & Stoller](scripts.md#xu--stoller-abac-policies). The `.abac`
+- Xu & Stoller: [Scripts - Xu & Stoller](scripts.md#xu--stoller-abac-policies). The `.abac`
   files are GPL-3.0 and are not part of this repository.
-- Amazon: [Scripts → Amazon](scripts.md#amazon-dataset).
+- Amazon: [Scripts - Amazon](scripts.md#amazon-dataset).
 - Dummy data: [Small test data](scripts.md#small-test-data).

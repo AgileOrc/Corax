@@ -67,7 +67,7 @@ evaluate/  loads the saved model, never trains
 | `prepare/make_amazon_scenarios.py` | Hides inferred role-based rules (title → resource) in the Amazon graph, for evaluating appeals |
 | `prepare/convert_xu_stoller.py` | Converts a Xu & Stoller ABAC policy (`.abac`) with one rule hidden (`--hide-rule N`) or each rule in turn (`--all-rules`) |
 | `prepare/appeal_scenarios.py` | Reads and writes `scenarios.json` (used by the scripts above) |
-| `prepare/make_enterprise.py`, `prepare/make_office.py` | The synthetic enterprise and office graphs of the document app demo ([scripts/README.md](../scripts/README.md)) |
+| `prepare/make_enterprise.py`, `prepare/make_office.py` | The synthetic enterprise and office graphs of the document app demo ([scripts/README.md](https://github.com/AgileOrc/Corax/blob/main/scripts/README.md)) |
 | `demo_gateway.py`, `demo_office.py`, `demo_office_cases.py`, `demo_backend.py` | The document app demo: prepare its graph and model, then send its cases through the Docker gateway ([docs/demo.md](demo.md)) |
 | `evaluate/evaluate_hgnn.py` | Test metrics of the risk score and the risk threshold calibration table |
 | `evaluate/evaluate_knn.py` | kNN precision@k, rank of the hidden rule among the candidate patterns, and its tier |
@@ -146,14 +146,14 @@ describes its users, objects and relations as a typed graph in two CSV files.
 
 | Column | Meaning |
 |---|---|
-| `id` | Unique node id across the whole file, e.g. `alice` |
-| `type` | Node type, e.g. `employee`, `report`, `department` |
+| `id` | Unique node id across the whole file, e.g. `employee_E049` |
+| `type` | Node type, e.g. `employee`, `document`, `department` |
 
 ```csv
 id,type
-alice,employee
-report_105,report
-department_sales,department
+employee_E049,employee
+document_D057,document
+department_engineering,department
 ```
 
 ### edges.csv
@@ -161,24 +161,25 @@ department_sales,department
 | Column | Meaning |
 |---|---|
 | `src` | Source node id (must exist in `nodes.csv`) |
-| `relation` | Relation name, e.g. `works_on`, `member_of` |
+| `relation` | Relation name, e.g. `works_in`, `owned_by` |
 | `dst` | Destination node id (must exist in `nodes.csv`) |
 
 ```csv
 src,relation,dst
-alice,member_of,department_sales
-alice,accessed,report_105
+employee_E049,works_in,department_engineering
+document_D057,owned_by,department_engineering
+employee_E040,accessed,document_D033
 ```
 
 The edge type is the triple `(source type, relation, destination type)`, derived from the node types.
-The same relation name may connect different node types, e.g. `(employee, member_of, department)` and
-`(report, member_of, department)` are two edge types.
+The same relation name may connect different node types, e.g. `(employee, member_of, team)` and
+`(document, member_of, team)` would be two edge types.
 
 ### Rules
 
 - Every node type must appear in at least one edge.
 - One relation is the **target relation** for link prediction (passed as `--target-relation`).
-  It must connect exactly one pair of node types, e.g. `accessed` from `employee` to `report`.
+  It must connect exactly one pair of node types, e.g. `accessed` from `employee` to `document`.
   Its edges should come only from requests the policy allowed.
 - Extra columns are allowed and ignored by the HGNN.
 
@@ -196,15 +197,15 @@ edges (`hidden/<name>.csv`), and the predicates of that rule.
   "max_size": 2,
   "scenarios": [
     {
-      "name": "manager",
-      "appeal": ["alice", "report_105"],
+      "name": "coordinator",
+      "appeal": ["employee_E049", "document_D057"],
       "expected": [
-        {"kind": "shared", "relation": "member_of", "other": "member_of"},
-        {"kind": "user_has", "relation": "holds", "other": "role_manager"}
+        {"kind": "shared", "relation": "works_in", "other": "owned_by"},
+        {"kind": "user_has", "relation": "holds", "other": "role_coordinator"}
       ],
-      "hidden": "hidden/manager.csv"
+      "hidden": "hidden/coordinator.csv"
     },
-    {"name": "one_off", "appeal": ["bob", "report_731"], "expected": null, "hidden": null}
+    {"name": "one_off", "appeal": ["employee_E040", "document_D037"], "expected": null, "hidden": null}
   ]
 }
 ```

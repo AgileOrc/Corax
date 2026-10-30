@@ -1,7 +1,7 @@
-# Getting started
+# Getting Started
 
 What you need, how the repository is organized, and how to run Corax with Docker. Run every command from the
-repository root. Once the stack is up, [Running the demo](demo.md) walks through it.
+repository root. Once the stack is up, [running the demo](demo.md) walks through it.
 
 ## Prerequisites
 
@@ -13,27 +13,27 @@ To run the demo, Docker is all you need:
 - **Free ports** 8080 (the document app) and 8090 (the Corax console), or other ones ([Settings](#settings)).
 - **About 2.5 GB of disk** for the images. Most of it is PyTorch, used once to train the model.
 
-To develop, test or run the scripts without Docker, you also need:
-
+To develop, test or run the scripts without Docker, also need:
 - **Python 3.11** or newer.
 - **The [OPA binary](https://www.openpolicyagent.org/docs/latest/#running-opa)**, for the policy tests and the appeal scripts.
 - **Node.js 22.12** or newer, only to work on the document app's web frontend.
 
 ## Project layout
 
-| Folder | What it holds | Who needs it |
+| Folder | What it holds | Relevant when |
 |---|---|---|
-| `policy/` | Corax's Rego framework: token checks, route matching, the call to the AI risk check, the deny-only rule | Anyone protecting an application |
-| `service/` | The Corax service (FastAPI): `/risk` for OPA, `/corax/*` for administrators, appeals and the rules they write | Anyone protecting an application |
-| `hgnn/` | Trains the graph model and exports one embedding per user and object (`python -m hgnn`) | Anyone training a model |
-| `scripts/` | Data preparation (from CSV or the public datasets), evaluation and the demo scripts. See [Scripts](scripts.md) | Anyone preparing data or reproducing results |
-| `demo/` | The application Corax protects in the demo: a document app, its rules, its web frontend and the Corax console | Anyone running or changing the demo |
-| `deploy/` | Docker Compose, Envoy and OPA settings that run everything together | Anyone running the stack |
-| `tests/` | Tests for the service, the model, the scripts and the demo app | Developers |
-| `docs/` | This documentation | Everyone |
+| `policy/` | Corax's Rego framework: token checks, route matching, the call to the AI risk check, the deny-only rule | Integrating Corax with an application |
+| `service/` | The Corax service (FastAPI): `/risk` for OPA, `/corax/*` for administrators, appeals and the rules they write | Integrating Corax with an application |
+| `hgnn/` | Trains the graph model and exports one embedding per user and object (`python -m hgnn`) | Training or retraining the model |
+| `scripts/` | Data preparation (from CSV or the public datasets), evaluation and the demo scripts. See [Scripts](scripts.md) | Preparing data or reproducing the evaluation |
+| `demo/` | The application Corax protects in the demo: a document app, its rules, its web frontend and the Corax console | Running or extending the demo |
+| `deploy/` | Docker Compose, Envoy and OPA settings that run everything together | Deploying the stack |
+| `tests/` | Tests for the service, the model, the scripts and the demo app | Changing the code |
+| `docs/` | This documentation | Always |
 
-Two folders are created on your machine and never committed. `output/` holds prepared data and trained models,
-and `datasets/` holds public datasets you download yourself.
+</br>2 folders are created on your machine:
+- `output/` holds prepared data and trained models,
+- `datasets/` holds public datasets you download yourself.
 
 ## Deploy with Docker
 
@@ -45,7 +45,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
 - `prepare` builds the tools image (the first time takes a few minutes), generates the synthetic company into
-  `output/gateway/data` and trains the graph model into `output/gateway/hgnn` (about 20 seconds). Run it once.
+  `output/gateway/data` and trains the graph model into `output/gateway/hgnn`. Run it once.
   `output/` stays on your disk.
 - `up -d --build` builds and starts six containers:
 
@@ -58,7 +58,7 @@ docker compose -f deploy/docker-compose.yml up -d --build
 | `web` | The app's web frontend | internal, through Envoy |
 | `console` | The Corax console, to send requests and handle appeals by hand | `8090` |
 
-Check that everything is up. `app` and `service` should say `healthy`:
+Check that everything is up (including `app` and `service`):
 
 ```bash
 docker compose -f deploy/docker-compose.yml ps
@@ -68,9 +68,9 @@ Then open **http://localhost:8080** (the document app) and **http://localhost:80
 
 The service and OPA share a volume for the rules from appeals, and OPA watches it, so a new rule is live without a
 restart. Both run inside Linux, so the file events reach OPA. A Windows folder mounted into a container often does
-not deliver them.
-
-> Tip: to drop `-f deploy/docker-compose.yml` from every command, set `COMPOSE_FILE` once per terminal:
+not deliver them.</br></br>
+**Tips:**
+> to drop `-f deploy/docker-compose.yml` from every command, set `COMPOSE_FILE` once per terminal:
 > `export COMPOSE_FILE=deploy/docker-compose.yml` (macOS, Linux), `$env:COMPOSE_FILE="deploy/docker-compose.yml"`
 > (PowerShell) or `set COMPOSE_FILE=deploy/docker-compose.yml` (cmd).
 
@@ -87,7 +87,7 @@ Set these in the terminal before `up`, then run `up -d` again. Write `$env:NAME=
 
 The limits of a narrow rule (6% of the model's 86 employees, so 5 people, then 50 new accesses and a mean risk of
 0.5) are the service's `AUTO_APPLY_MAX_USER_SHARE`, `AUTO_APPLY_MAX_PAIRS` and `AUTO_APPLY_MAX_MEAN_RISK`. The share
-is set under `service:` → `environment:` in `deploy/docker-compose.yml`. Add or change them there, then `up -d`.
+is set under `service:` into `environment:` in `deploy/docker-compose.yml`. Add or change them there, then `up -d`.
 
 ### Before you expose the stack
 
@@ -98,28 +98,42 @@ The defaults are for a local demo. Before anyone else can reach the stack, for e
   to check sign-in tokens. Anyone who knows it can create an administrator token without a password.
 - **Keep the `demo` container off shared machines.** It reads the other containers' logs through the Docker socket.
 
-### Reset, stop, clean up
+### Lifecycle
 
-| What | Command |
-|---|---|
-| Start again from a fresh stack (drops requests, exceptions and rules, keeps the prepared data) | `docker compose -f deploy/docker-compose.yml down -v`, then `... up -d` |
-| Stop, keeping everything | `docker compose -f deploy/docker-compose.yml down`, later `... up -d` |
-| Rebuild after changing code | `docker compose -f deploy/docker-compose.yml up -d --build` |
-| Remove the containers, volumes and images | `docker compose -f deploy/docker-compose.yml down -v --rmi local`, and `docker image rm corax-tools` |
-| Generate the data and train the model again | delete `output/gateway`, then `... run --rm prepare` |
+**Stop the stack.** Containers stop, and all data is kept. Start it again with `up -d`.
 
-### Troubleshooting
+```bash
+docker compose -f deploy/docker-compose.yml down
+docker compose -f deploy/docker-compose.yml up -d
+```
 
-| Problem | Fix |
-|---|---|
-| `port is already allocated` | Another program uses 8080 or 8090. Choose other ports ([Settings](#settings)) |
-| The demo log says "the stack has N generated file(s) already", or cases fail | The stack was used before. Reset it |
-| A demo scenario shows the colleague allowed before | Each scenario works once per stack, because the colleague may already have access. Reset |
-| The containers stopped after Docker or the computer restarted | `docker compose -f deploy/docker-compose.yml up -d`. The data is kept |
-| The app or the service never becomes `healthy` | `prepare` did not run, or `output/gateway` is missing. Run it, then `up -d` |
-| You changed `demo/data.json` or `deploy/envoy.yaml` | `docker compose -f deploy/docker-compose.yml restart opa envoy`. Both are mounted as single files, which they do not reload |
-| Linux: `output/` belongs to root after `prepare` | `sudo chown -R "$USER" output` |
-| Your numbers differ slightly from the docs | Training depends on the machine's PyTorch build. The demo cases still check what each one should show |
+**Reset to a clean state.** Removes every request, exception and rule written since the stack started, and
+recreates the demo accounts. The prepared data and the trained model are kept.
+
+```bash
+docker compose -f deploy/docker-compose.yml down -v
+docker compose -f deploy/docker-compose.yml up -d
+```
+
+**Rebuild after a code change.** Rebuilds the images whose code changed and restarts their containers.
+
+```bash
+docker compose -f deploy/docker-compose.yml up -d --build
+```
+
+**Regenerate the data and retrain the model.** Delete `output/gateway` first, then run `prepare` and reset the
+stack so the service loads the new model.
+
+```bash
+docker compose -f deploy/docker-compose.yml run --rm prepare
+```
+
+**Remove everything.** Removes the containers, the volumes and the images built for Corax.
+
+```bash
+docker compose -f deploy/docker-compose.yml down -v --rmi local
+docker image rm corax-tools
+```
 
 ## Develop without Docker
 
@@ -156,3 +170,4 @@ npm run dev
 Then open http://localhost:5173.
 
 Preparing data, training the model and the demo scripts are in [Scripts](scripts.md).
+</br> Go to [next page (demo)](demo.md)
