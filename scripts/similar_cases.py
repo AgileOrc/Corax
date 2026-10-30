@@ -11,6 +11,7 @@ Example:
 """
 
 import argparse
+import shutil
 import sys
 from pathlib import Path
 
@@ -113,6 +114,9 @@ def show_pick(args, model, graph, index, chosen) -> None:
     )
     print(f"\n--- appeal-preview-exception.rego\n{exception}\n--- appeal-preview-rule.rego\n{rule}")
 
+    if not (shutil.which(args.opa) or Path(args.opa).is_file()):
+        print(f"validation skipped: opa not found ({args.opa}). Install it, or pass --opa path/to/opa")
+        return
     expected = expected_decisions(
         graph.structure, chosen.predicates, opened, index.user_ids, index.object_ids, appeal
     )

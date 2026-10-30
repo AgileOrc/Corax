@@ -20,4 +20,4 @@ opa check --strict policy
 opa test policy -v
 ```
 
-What an application provides, the configuration and the guarantees: [docs/reference.md](../docs/reference.md#policy).
+What an application provides, the configuration and the guarantees: [docs/scripts.md](../docs/architecture.md#policy).

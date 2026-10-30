@@ -2,7 +2,7 @@
 
 The graph model behind Corax's AI. It trains on the access graph (users, objects and how they are
 related) and writes one vector per node, which the service uses for the risk score and for finding
-similar cases in appeals. The method follows [[1]](../docs/evaluation.md#references).
+similar cases in appeals. The method follows [[1]](../docs/references.md).
 
 ## Files
 
@@ -24,4 +24,4 @@ From the repository root:
 python -m hgnn --data <data folder> --target-relation accessed --out <model folder>
 ```
 
-Input format, options and the files written: [docs/reference.md](../docs/reference.md#hgnn-training).
+Input format, options and the files written: [docs/scripts.md](../docs/scripts.md#hgnn-training).

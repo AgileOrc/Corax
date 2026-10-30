@@ -16,7 +16,7 @@ import json
 from collections import defaultdict
 from dataclasses import asdict
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePath
 
 import numpy as np
 import torch
@@ -115,6 +115,11 @@ def load_trained(out_dir: str | Path, data_folder: str | Path | None = None):
     data_folder = data_folder or metadata.get("data")
     if not data_folder:
         raise ValueError(f"{out_dir / 'metadata.json'} has no data folder; pass it explicitly")
+    if not Path(data_folder).exists():
+        # trained elsewhere (in a container, on another machine): the data folder next to the model folder
+        nearby = out_dir.parent / PurePath(data_folder).name
+        if nearby.exists():
+            data_folder = nearby
     config = TrainConfig(**metadata["config"])
 
     graph = load_graph(data_folder, metadata["target_edge_type"][1])

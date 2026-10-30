@@ -1,16 +1,3 @@
-# Shows what the risk score predicts for (user, object) pairs the model never saw during training.
-#
-# The pairs come from the test split that python -m hgnn held out (--test-ratio > 0). The embeddings are
-# computed without those edges, as in scripts/evaluate/evaluate_hgnn.py, so the model cannot have memorised them.
-#   allowed      a real access from the test split; the AI should let it pass
-#   not allowed  random pair without access; the AI should deny it
-#   peer has it  pair without access whose object a peer of the user (same group, e.g. same program) has;
-#                the hardest case, because the pair looks normal
-# A pair is denied when risk > the threshold in metadata.json, the same rule /risk uses.
-#
-# python -m hgnn --data output/dummy-data --target-relation accessed --out output/dummy --learning-rate 0.01 --patience 50
-# python scripts/demo_risk.py --model-dir output/dummy
-
 import argparse
 import random
 import sys

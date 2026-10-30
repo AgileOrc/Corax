@@ -1,57 +1,13 @@
-# How Corax works
+# AI model and evaluation
 
-Corax sits in front of an application and decides every request to it. It has an online part, which
-handles requests and appeals, and an offline part, which trains the graph model the online part reads.
-
-Three principles shape it (details in [security](security.md)): policy code is the only source of allow
-decisions, the AI can only turn an allow into a deny, and every rule from an appeal is validated, logged
-with who gained access and how that access is used, and revoked by deleting its file.
-
-## Components
-
-![Corax components](assets/architecture-components.png)
-
-| Component | Does | Reads | Writes | Reachable from |
-|---|---|---|---|---|
-| Envoy | Proxy in front of the application, asks OPA about every request (`ext_authz`) | | | Clients |
-| OPA | Policy engine: JWT, route, policy, AI risk call | `policy/`, the application's rules, `policies/generated/`, `data.json`, `graph.json` | | Envoy only |
-| `service` | `/risk` and `/usage` for OPA, `/corax/*` for admins and users | Model folder, `data.json` | `policies/generated/`, appeal records, access snapshots, usage logs | OPA and Envoy only |
-| `hgnn` | Offline job: trains the model and exports it (`python -m hgnn`) | `nodes.csv`, `edges.csv` | Model folder | Nobody |
-
-## Request path
-
-![Request path](assets/architecture-request.png)
-
-1. **Identity and route:** OPA verifies the JWT (the user is its `sub`) and matches the method and path to a route. The object id comes only from the URL path, never from the query string or body.
-2. **Policy:** The application's rules and the rules from appeals decide. A deny ends here with 403.
-3. **Risk check:** Only after an allow, OPA asks the service for the risk of this (user, object) pair. Read [risk score](#risk-score).
-4. **Decision:** The request goes through unless the risk is above the threshold.
-
-The deny-only rule is written out in Rego, so it can be audited:
-
-```rego
-allow if {
-	policy_allow
-	not ai_high_risk
-}
-```
-
-Listed admins reach the Corax admin routes without the risk check, and the exact pair an admin approved
-in an appeal skips it too. Read [policy](reference.md#policy).
-
-| Failure | Result |
-|---|---|
-| Missing, expired or forged token | 403 response code, `missing or invalid token` |
-| Method and path match no route | 403 response code, `no matching route` |
-| OPA unreachable | Envoy denies everything (`failure_mode_allow: false`) |
-| Service down or slower than `ai.timeout` | The policy decision stands, `allowed without AI check` |
-| User or object unknown to the model (added after the last training) | The policy decision stands, `allowed without AI check` |
+How Corax scores a request, how it turns an approved appeal into candidate rules, and how both were
+evaluated.
 
 ## Risk score
 
 ### Background
 
-The model is Corax's own implementation of the heterogeneous graph method in [[1]](evaluation.md#references), with the architecture and hyperparameters described there. Users, objects and everything that connects them (departments, roles, projects, managers) are nodes of one typed graph. Past access is one edge type, and the model learns to predict it (link prediction).
+The model is Corax's own implementation of the heterogeneous graph method in [[1]](references.md), with the architecture and hyperparameters described there. Users, objects and everything that connects them (departments, roles, projects, managers) are nodes of one typed graph. Past access is one edge type, and the model learns to predict it (link prediction).
 
 ### What Corax adds
 
@@ -67,9 +23,9 @@ The model is Corax's own implementation of the heterogeneous graph method in [[1
 - **The model only checks, after the policy.** It runs once the policy has already allowed a request
   and can only turn that allow into a deny, so its mistakes can cost a false deny but never a false allow.
 - **A calibrated threshold.** Set so that 99% of real access in the validation split passes.
-- **Hard negatives** (optional, `--hard-negative-ratio`): some training negatives are objects a peer of
+- **Hard negatives** (optional, `--hard-negative-ratio`). Some training negatives are objects a peer of
   the user has, the realistic case of a misconfigured rule. On Amazon they raise the AUC on such pairs
-  from 0.675 to 0.897 ([Evaluation](evaluation.md)).
+  from 0.675 to 0.897 ([Evaluation](ai-model-and-evaluation.md#evaluation)).
 - **A held-out test split** (80%/10%/10%), so reported numbers come from edges never used for training
   or calibration.
 - **The same embeddings find similar cases** (kNN) for [appeals](#appeal-path).
@@ -77,7 +33,7 @@ The model is Corax's own implementation of the heterogeneous graph method in [[1
 ### Graph
 
 Corax is not tied to one domain. It reads typed nodes and typed edges from two CSV files
-([data format](reference.md#data-format)). One edge type is the target. For the example used in these
+([data format](scripts.md#data-format)). One edge type is the target. For the example used in these
 docs, a company whose employees read reports:
 
 | Amazon dataset | Example company |
@@ -103,7 +59,7 @@ A role is a node, not an attribute, so the graph contains the path `employee →
 | Optimizer | Adam, learning rate 0.001, patience 10, embedding size 64 |
 | Hard negatives | Optional share of negatives taken from a peer's objects (`--hard-negative-ratio`, 0.5 on Amazon) |
 
-Full-batch training: the graphs fit in memory, and `LinkNeighborLoader` needs `pyg-lib`, which is hard
+Training is full-batch, because the graphs fit in memory and `LinkNeighborLoader` needs `pyg-lib`, which is hard
 to install on Windows.
 
 Node inputs are learned per node (transductive). A new user or object only gets an embedding after
@@ -146,8 +102,8 @@ once, then Corax looks for other people in the same situation and proposes a rul
 
 **Phase 2: the admin accepts one of the proposed rules**, `POST /corax/appeals/{id}/confirm`.
 
-4. The scope of the chosen rule is computed: share of users, new pairs, mean risk.
-5. Tier: a small rule continues. A large one returns 409, with the users who would gain access, until the
+4. Corax computes the scope of the chosen rule, which is its share of users, new pairs and mean risk.
+5. A small rule continues. A large one returns 409, with the users who would gain access, until the
    admin confirms again with `acknowledge_scope`. The admin can also keep only the exception.
 6. The rule is written as Rego from a fixed template and validated (syntax, whitelist, the application's
    tests, equivalence with the pattern). A rule that fails is not written.
@@ -156,7 +112,7 @@ once, then Corax looks for other people in the same situation and proposes a rul
 8. A snapshot of who gained access to what is written next to the appeal record.
 
 **Afterwards: every use is logged.** The users in the snapshot reach their new resources without another
-approval. Each time they do, the service logs it: OPA's `/risk` call shows the pair, and for the appellant's
+approval. Each time they do, the service logs it. OPA's `/risk` call shows the pair, and for the appellant's
 exception, which skips `/risk`, OPA calls `/usage`. `GET /corax/rules` shows every rule in effect, who
 gained access and how it was used, in plain language. `GET /corax/me/access` shows a user the resources
 they can reach through appeals.
@@ -169,9 +125,9 @@ is not recorded.
 titles of objects someone may not open (`corax/authz/allowed_objects` lists only the allowed ones). So
 access can also start from the admin, through the same flow:
 
-- **The admin gives access** to someone who joined a team or changed role: `POST /corax/appeals` with the
+- **The admin gives access** to someone who joined a team or changed role, with `POST /corax/appeals` and the
   admin's token, without any request.
-- **Corax suggests access** the model expects but nobody granted (`GET /corax/suggestions`): most of the
+- **Corax suggests access** the model expects but nobody granted (`GET /corax/suggestions`), when most of the
   user's closest peers can reach the object, and the risk is low.
 - **A user asks for a whole unit** (e.g. a department, chosen from a list, never typed) without naming a
   document. Corax ranks that unit's objects for them (`POST /corax/rank`) and the admin picks.
@@ -186,7 +142,7 @@ Policy files change only on disk. OPA's REST API is never used for writes and is
 | `<id>-granted.json`: who gained access to what | `appeals/` | Phase 1 (exception) and phase 2 (rule) |
 | `<id>-usage.jsonl`: every use of that access | `appeals/` | Each allowed request it covers |
 
-The steps in detail use this example (illustrative): `alice`, the manager of the sales department, is
+The steps in detail use an illustrative example. `alice`, the manager of the sales department, is
 denied `report_105`, a report of that department, because no rule covers managers yet.
 
 ### 1. Exact exception
@@ -223,12 +179,12 @@ predicates:
 | `direct` | user is linked to the object | `user owns object` |
 | `object_is` | one specific object (systems in Amazon, off by default) | `object is resource_42` |
 
-**Too specific values are skipped**: a value both the user and the object have (the `shared` candidate
+**Too specific values are skipped**, such as a value both the user and the object have (the `shared` candidate
 covers it for every value) and a value of an attribute with several values (one of the projects a
 user works on). Otherwise one slice per value would rank above the general rule, because it opens fewer
 pairs.
 
-Candidates are ordered **narrowest first**: fewest new pairs, then fewest users, then fewest
+Candidates are ordered **narrowest first**, by fewest new pairs, then fewest users, then fewest
 predicates, then highest kNN support. For each one the admin sees how many users and pairs it opens
 and what share of the similar cases it covers:
 
@@ -258,7 +214,7 @@ Computed from the exact pairs the chosen pattern opens:
 | New (user, object) pairs | `AUTO_APPLY_MAX_PAIRS`, 50 |
 | Mean risk of the new pairs | `AUTO_APPLY_MAX_MEAN_RISK`, 0.5 |
 
-**Small** (all within limits): applied, logged. **Large** (any limit exceeded): the confirm call returns
+A **small** rule (all within limits) is applied and logged. For a **large** one (any limit exceeded), the confirm call returns
 409 with the scope until the admin repeats it with `acknowledge_scope: true`.
 
 No regulation fixes these numbers. ISO 27001, NIST 800-53, PCI DSS and SOC 2 require that access grants
@@ -304,37 +260,57 @@ Any failure rejects the rule (422) and nothing is written:
 The file is then written atomically, so OPA never loads half a file. Revoking a rule means deleting
 its file, through `POST /corax/appeals/{id}/revoke` so that it is recorded.
 
-## Data and files
+## Evaluation
 
-| File | Written by | Read by | Content |
-|---|---|---|---|
-| `embeddings.npz`, `node_ids.json` | `hgnn` | service | One vector per node |
-| `metadata.json` | `hgnn` | service | Settings, metrics, risk threshold |
-| `graph.json` | `hgnn` | service, OPA (`data.corax.graph`) | Facts of every node: department, role, … |
-| `access.json` | `hgnn` | service | Access history, to skip pairs that already have access |
-| `data.json` | Operator | OPA, service | JWT settings, routes, AI address, admin list ([Policy](reference.md#policy)) |
-| `policies/generated/*.rego` | service | OPA | Rules and exceptions from appeals |
-| `appeals/*.json` | service | service, admins | Appeal records, access snapshots |
-| `appeals/*-usage.jsonl` | service | service, admins | Uses of access granted by appeals |
+Every number below comes from a model trained once with `python -m hgnn` and scored by a script that
+only loads it (`scripts/evaluate/`). The commands are in [Scripts](scripts.md#scripts).
 
-After retraining, the new model folder replaces the old one. The service reads it on restart, and OPA
-needs the new `graph.json` in its data folder.
+### Risk score: Amazon Access Samples
 
-## Trust boundaries
+UCI Amazon Access Samples (CC BY 4.0) has 36,063 users, 33,252 resources, 405 departments, 4,979 titles,
+3,207 managers, 595,506 access edges. Split 80 / 10 / 10, the test edges are never used in training.
 
-- **Only Envoy is reachable from outside:** OPA, the service and the application sit on the internal
-  network.
-- **`/risk` and `/usage` have no authentication:** they must stay reachable by OPA only. `/usage` can
-  only add lines to a usage log, never grant access.
-- **A user sees only their own access:** `GET /corax/me/access` takes the user from the verified token,
-  never from the path, query or headers.
-- **Appeals are checked twice:** OPA lets only `config.admin.users` reach `/corax/*`, and the service
-  verifies the admin's JWT again with the same key and admin list, so reaching the service directly does not bypass the check.
-- **No write API for policies:** Rules reach OPA only as files in a folder the service writes.
+- **Random negatives**: random (user, resource) pairs without access.
+- **Hard negatives**: a resource a peer of the user (same department, title or manager) has, but the
+  user does not. They look normal, which makes them the realistic case for a misconfigured rule.
 
-## Deployment
+| Model | AUC random | AUC hard | Threshold | False deny | Detection random | Detection hard |
+|---|---|---|---|---|---|---|
+| Base | 0.995 | 0.675 | 0.988 | 0.85% | 90.5% | 6.4% |
+| 50% hard negatives in training (chosen) | 0.985 | 0.897 | 0.978 | 0.94% | 78.8% | 24.5% |
 
-`deploy/docker-compose.yml` runs Envoy, OPA and the service in front of a stand-in API. The service and
-OPA share the `policies/generated` volume, so OPA sees new files at once. See the
-[demo](getting-started.md#3-end-to-end-demo-with-docker). What production still needs
-(identity provider keys, TLS between components, health checks) is in [future work](security.md#future-work).
+The threshold is calibrated so that 99% of real access in the validation split passes. Training with
+hard negatives costs some detection of random pairs but almost quadruples detection of hard ones, at
+the same false deny rate.
+
+### Appeals: hidden rules
+
+The benchmarks are the university ABAC policies of [[6]](references.md) and rules inferred from the Amazon data.
+A rule is removed from the data, the model is trained without it, and one of its pairs is appealed. A
+good appeal flow puts that rule near the top of the candidate list.
+
+- **P@10**: share of the 10 similar cases that belong to the hidden rule.
+- **Rank**: position of the hidden rule among the candidates.
+- **Tier**: of the hidden rule, under the default limits (40% of users, 50 pairs, mean risk 0.5).
+
+| Data | Appeals | P@10 | Rank 1 | Top 5 | Tier of the rule |
+|---|---|---|---|---|---|
+| Xu & Stoller university policies (5 files × 9 rules) | 45 | 34% | 26 | 37 | 45 large |
+| Amazon, inferred "title T gets resource R" rules | 10 | 70% | 1 | 10 | 8 small, 2 large |
+| Dummy data, "head of program reads own students" | 1 | 10% | 0 | 1 | small |
+
+Appeals that should not generalize (a lecturer asking for a student of another program, a one-off
+Amazon grant) produce only large candidates on every dataset, so they wait for an admin.
+
+The Xu & Stoller rules are all large because each grants more than 50 pairs, and rules 1, 6 and 9 reach
+60 to 75% of the users. That is the intended behavior, because a rule that broad needs a human.
+
+**Known weakness.** Rules that slice by an attribute of the object only (Xu & Stoller rules 4 and 8)
+rank lower (5 to 11), because every value of that attribute gives a narrower candidate.
+
+### Reproduce
+
+- Xu & Stoller: [Scripts → Xu & Stoller](scripts.md#xu--stoller-abac-policies). The `.abac`
+  files are GPL-3.0 and are not part of this repository.
+- Amazon: [Scripts → Amazon](scripts.md#amazon-dataset).
+- Dummy data: [Small test data](scripts.md#small-test-data).

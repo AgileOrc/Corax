@@ -70,11 +70,3 @@ export function PageHead({ title, children, actions, size = "text-3xl" }) {
 
 export const inputClass = "w-full rounded-lg border border-line bg-panel px-3 py-2 text-ink";
 
-export function Field({ id, label, children }) {
-  return (
-    <div className="mt-3 first:mt-0">
-      <label htmlFor={id} className="mb-1 block text-[13px] font-medium text-muted">{label}</label>
-      {children}
-    </div>
-  );
-}

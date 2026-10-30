@@ -32,37 +32,21 @@ record per appeal, with its history, in the `state` volume (`appeals/`), which O
 
 ## Run
 
-With nothing but Docker (Docker Desktop, or Docker with the compose plugin), from the repository root:
-
-```bash
-docker compose -f deploy/docker-compose.yml run --rm prepare   # graph and HGNN -> output/ (first time a few minutes: builds the tools image)
-docker compose -f deploy/docker-compose.yml up -d --build
-docker compose -f deploy/docker-compose.yml run --rm demo      # 57 cases through the document app, as a log
-# the app: http://localhost:8080 (sign in, e.g. e049 / 123456), the Corax console: http://localhost:8090
-docker compose -f deploy/docker-compose.yml down -v            # -v also drops exceptions, rules and the app's database
-```
+How to start, configure, reset and troubleshoot the stack: [Getting started](../docs/getting-started.md#deploy-with-docker).
+The walkthrough: [Running the demo](../docs/demo.md).
 
 `prepare` and `demo` are one-off services of the profile `tools` (`deploy/tools.Dockerfile`: Python, CPU torch, the
-scripts); `up` does not start them. `demo` mounts the Docker socket to read Envoy's and OPA's logs, which gives it
-control of Docker on the machine: it is a local demo tool. On Linux the files `prepare` writes to `output/` belong to
-root.
+scripts), and `up` does not start them. `demo` mounts the Docker socket to read Envoy's and OPA's logs, which gives it
+control of Docker on the machine, so it is a local demo tool.
 
-Or with Python on the host (the virtual environment of the root README):
+With Python on the host instead of the tools image ([Getting started](../docs/getting-started.md#develop-without-docker)):
 
 ```bash
 python scripts/demo_gateway.py prepare     # enterprise graph and HGNN -> output/gateway (1 to 2 minutes)
-docker-compose -f deploy/docker-compose.yml up -d --build      # or: docker compose ...
-python scripts/demo_gateway.py run         # both cases through Envoy; prints a before/after table
-python scripts/demo_backend.py             # or: 57 cases through the document app, as a log (below)
-# the app: http://localhost:8080, the Corax console: http://localhost:8090
-docker-compose -f deploy/docker-compose.yml down -v             # -v also drops exceptions and rules
+docker compose -f deploy/docker-compose.yml up -d --build
+python scripts/demo_gateway.py run         # requests and appeals through Envoy, a before/after table
+python scripts/demo_backend.py             # or: 57 cases through the document app, as a log
 ```
 
-Other ports: `CORAX_GATEWAY_PORT=8180 CORAX_CONSOLE_PORT=8190 docker-compose -p corax-test -f deploy/docker-compose.yml up -d --build`.
-OPA's decisions: `docker-compose -f deploy/docker-compose.yml logs opa`.
-
-After changing `envoy.yaml` or `../demo/data.json`, restart Envoy and OPA
-(`docker-compose -f deploy/docker-compose.yml restart opa envoy`): both are mounted as single files, which neither
-reloads when they change.
-
-The step-by-step walkthrough is [docs/demo.md](../docs/demo.md).
+A second stack on other ports: `CORAX_GATEWAY_PORT=8180 CORAX_CONSOLE_PORT=8190 docker compose -p corax-test -f deploy/docker-compose.yml up -d --build`.
+OPA's decisions: `docker compose -f deploy/docker-compose.yml logs opa`.

@@ -7,22 +7,24 @@ these files. How to run it: [deploy/README.md](../deploy/README.md) and [docs/de
 | Folder or file | Content |
 |---|---|
 | `app/` | The document app (`docapp/`, FastAPI + SQLite, no authorization of its own) |
-| `web/` | Its web frontend (plain HTML, CSS and JavaScript, no build step), served by nginx through Envoy at `/` |
+| `web/` | Its web frontend (React and Tailwind, built with Vite into static files), served by nginx through Envoy at `/` |
 | `console/` | Corax's demo console: you pick who you are, it signs the JWT (it plays the identity provider) and sends the request through Envoy. It also shows the generated Rego and the appeal history |
 | `policy/` | The document app's rules (package `app.authz`, `app.rego`) and their tests |
 | `data.json` | `data.corax.config`: JWT constraints, the app's routes, the service's address, the admins and readable labels |
 
 ## The web frontend
 
-http://localhost:8080 is the document app as people use it (`web/`): sign in, browse and search the catalog, open a
-document, preview its summary, and ask for access when Corax denies one. Every request waits for the admin
-(`admin_01`): approve (the exact exception applies at once) or reject with a note.
-The request then waits under "Your decision" with Corax's candidate patterns, each with its tier (people, new pairs,
-mean AI risk): apply one (a large one asks to confirm its scope) or keep only the exception.
+http://localhost:8080 is the document app as people use it (`web/`). Employees browse the documents they can open
+and ask for the ones they cannot. The administrator (`admin_01`) reviews requests, picks the rules Corax suggests,
+grants and revokes access, and reads the audit log. Every screen is described in [docs/demo.md](../docs/demo.md).
 
-Envoy serves `GET /` and `GET /assets/...` from the `web` container without the Corax check, like the login; every
-call the page makes goes through Envoy and OPA with the user's token. The page talks only to its own origin (no CORS)
-and nginx sends a strict Content-Security-Policy (no inline scripts). The token lives in the tab's `sessionStorage`.
+Envoy serves `GET /` and `GET /assets/...` from the `web` container without the Corax check, like the login. Every
+call the page makes goes through Envoy and OPA with the user's token. The page talks only to its own origin (no CORS),
+and nginx sends a strict Content-Security-Policy (no inline scripts or styles). The token lives in the tab's
+`sessionStorage`. The pages use hash routes (`#/documents`), because Envoy sends every other path to the app.
+
+The Docker image builds the frontend (`npm ci`, `npm test`, `npm run build`) and serves the result. To work on it
+with live reload: [Getting started](../docs/getting-started.md#develop-without-docker).
 
 ## The document app
 

@@ -20,7 +20,7 @@ python scripts/demo_appeal.py --model-dir <model folder> --opa <path to opa>
 python scripts/similar_cases.py --model-dir <model folder> --user <user> --object <object>
 ```
 
-Every script and the commands for each dataset: [docs/reference.md](../docs/reference.md#scripts).
+Every script and the commands for each dataset: [docs/scripts.md](../docs/scripts.md#scripts).
 
 ## Demo
 
