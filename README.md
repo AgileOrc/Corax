@@ -26,27 +26,39 @@ public documents of their own department. Chloe coordinates every engineering pr
 of each one, so the rules keep some engineering documents from her. Oscar coordinates Finance and has the same
 problem, although he has not noticed yet.
 
-<!-- TODO: GIFs, cut from the demo video -->
+![Signing in to the document application](docs/assets/0.gif)
 
 **1. Every request is checked:** Chloe opens an engineering document outside her projects and is blocked. She
 sees nothing about it, not even its title, so nobody can find out which documents exist by guessing. Requests the
 rules do allow are checked again by Corax, and the ones that do not fit how people like her work are blocked too.
 
+![Chloe is blocked from an engineering document](docs/assets/1.gif)
+
 **2. She asks, with a reason:** Chloe writes why she needs the document. The request goes to an administrator,
 and she can follow it under "My requests".
+
+![Chloe requests access with a reason](docs/assets/2.gif)
 
 **3. One approval, and a suggestion for everyone like her:** The administrator approves, and Chloe can open the
 document at once. Corax then suggests rules for people in the same situation, from the narrowest to the
 broadest, for example "coordinators may read the documents of their own department". For each one it shows who
 would gain access, to which documents, and how unusual that access would be.
 
+![The administrator approves and reviews the suggested rules](docs/assets/3.gif)
+
 **4. The rule reaches the right people:** The administrator picks the coordinator rule. It reaches only a few
 people, so it applies at once. Oscar can now open his own department's documents without ever asking. A rule that
 would reach many people asks the administrator to confirm it a second time.
 
+![The administrator applies the coordinator rule](docs/assets/4a.gif)
+
+![Oscar opens his department's documents without asking](docs/assets/4b.gif)
+
 **5. Every decision leaves a trace, and can be undone:** The audit log records who approved what, and the numbers
 that made the rule narrow or broad. Access granted shows who used the new access and when. If the rule turns out
 to be wrong, the administrator revokes it, and the access is gone at once.
+
+![The audit log and revoking the rule](docs/assets/5.gif)
 
 Chloe and Oscar are real accounts of the demo, `e049` and `e085`. The full walkthrough is in [Demo Docs](docs/demo.md).
 
