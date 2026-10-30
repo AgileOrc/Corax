@@ -1,7 +1,79 @@
-# Reference
+# Architecture
 
-Details for running and configuring each part: [service API](#service-api), [policy](#policy),
-[HGNN training](#hgnn-training), [scripts](#scripts) and [data format](#data-format).
+Corax sits in front of an application and decides every request to it. It has an online part, which
+handles requests and appeals, and an offline part, which trains the graph model the online part reads.
+
+Three principles shape it, detailed under [Security](#security). Policy code is the only source of allow
+decisions, the AI can only turn an allow into a deny, and every rule from an appeal is validated, logged
+with who gained access and how that access is used, and revoked by deleting its file.
+
+## Components
+
+![Corax components](assets/architecture-components.png)
+
+| Component | Does | Reads | Writes | Reachable from |
+|---|---|---|---|---|
+| Envoy | Proxy in front of the application, asks OPA about every request (`ext_authz`) | | | Clients |
+| OPA | Policy engine: JWT, route, policy, AI risk call | `policy/`, the application's rules, `policies/generated/`, `data.json`, `graph.json` | | Envoy only |
+| `service` | `/risk` and `/usage` for OPA, `/corax/*` for admins and users | Model folder, `data.json` | `policies/generated/`, appeal records, access snapshots, usage logs | OPA and Envoy only |
+| `hgnn` | Offline job: trains the model and exports it (`python -m hgnn`) | `nodes.csv`, `edges.csv` | Model folder | Nobody |
+
+## Request path
+
+![Request path](assets/architecture-request.png)
+
+1. **Identity and route:** OPA verifies the JWT (the user is its `sub`) and matches the method and path to a route. The object id comes only from the URL path, never from the query string or body.
+2. **Policy:** The application's rules and the rules from appeals decide. A deny ends here with 403.
+3. **Risk check:** Only after an allow, OPA asks the service for the risk of this (user, object) pair. Read [risk score](ai-model-and-evaluation.md#risk-score).
+4. **Decision:** The request goes through unless the risk is above the threshold.
+
+The deny-only rule is written out in Rego, so it can be audited:
+
+```rego
+allow if {
+	policy_allow
+	not ai_high_risk
+}
+```
+
+Listed admins reach the Corax admin routes without the risk check, and the exact pair an admin approved
+in an appeal skips it too. Read [policy](architecture.md#policy).
+
+| Failure | Result |
+|---|---|
+| Missing, expired or forged token | 403 response code, `missing or invalid token` |
+| Method and path match no route | 403 response code, `no matching route` |
+| OPA unreachable | Envoy denies everything (`failure_mode_allow: false`) |
+| Service down or slower than `ai.timeout` | The policy decision stands, `allowed without AI check` |
+| User or object unknown to the model (added after the last training) | The policy decision stands, `allowed without AI check` |
+
+## Data and files
+
+| File | Written by | Read by | Content |
+|---|---|---|---|
+| `embeddings.npz`, `node_ids.json` | `hgnn` | service | One vector per node |
+| `metadata.json` | `hgnn` | service | Settings, metrics, risk threshold |
+| `graph.json` | `hgnn` | service, OPA (`data.corax.graph`) | Facts of every node: department, role, … |
+| `access.json` | `hgnn` | service | Access history, to skip pairs that already have access |
+| `data.json` | Operator | OPA, service | JWT settings, routes, AI address, admin list ([Policy](architecture.md#policy)) |
+| `policies/generated/*.rego` | service | OPA | Rules and exceptions from appeals |
+| `appeals/*.json` | service | service, admins | Appeal records, access snapshots |
+| `appeals/*-usage.jsonl` | service | service, admins | Uses of access granted by appeals |
+
+After retraining, the new model folder replaces the old one. The service reads it on restart, and OPA
+needs the new `graph.json` in its data folder.
+
+## Trust boundaries
+
+- **Only Envoy is reachable from outside:** OPA, the service and the application sit on the internal
+  network.
+- **`/risk` and `/usage` have no authentication:** they must stay reachable by OPA only. `/usage` can
+  only add lines to a usage log, never grant access.
+- **A user sees only their own access:** `GET /corax/me/access` takes the user from the verified token,
+  never from the path, query or headers.
+- **Appeals are checked twice:** OPA lets only `config.admin.users` reach `/corax/*`, and the service
+  verifies the admin's JWT again with the same key and admin list, so reaching the service directly does not bypass the check.
+- **No write API for policies:** Rules reach OPA only as files in a folder the service writes.
 
 ## Service API
 
@@ -23,7 +95,7 @@ FastAPI service called by OPA and by admins. It reads the folder written by `hgn
 | `GET /corax/suggestions?user=&limit=` | Admin | Access the model expects but nobody granted yet, for an admin to review. Nothing is written |
 | `POST /corax/rank` | Admin | The objects linked to a node (e.g. a department) that a user cannot reach yet, ranked for that user |
 
-Concepts: [Risk score](how-it-works.md#risk-score), [Appeal path](how-it-works.md#appeal-path).
+The concepts behind them are in [Risk score](ai-model-and-evaluation.md#risk-score) and [Appeal path](ai-model-and-evaluation.md#appeal-path).
 
 ### Run
 
@@ -122,7 +194,7 @@ POST /corax/appeals/appeal-0001/revoke    {"exception": false}
 - `description` is a plain-language sentence built from the same predicates as the Rego file, for the
   admin to read. OPA still enforces the Rego file. `pattern` is the same rule in technical form.
 - When access is granted (the exception at once, the rule when the admin accepts it), the service writes
-  a snapshot of who gained access to what: `appeals/<id>-granted.json`. Every later use of that access
+  a snapshot of who gained access to what, in `appeals/<id>-granted.json`. Every later use of that access
   is appended to `appeals/<id>-usage.jsonl`.
 - Revoking through the endpoint deletes the file and records who revoked it and when. Deleting the file
   by hand also removes the rule, but it is not recorded, and `GET /corax/rules` flags it.
@@ -151,9 +223,9 @@ It lists only access from appeals. Access from the application's own rules is no
 ### Suggested access and ranking a unit
 
 The model was trained to predict access. Besides denying pairs that do not fit, its predictions point at
-access a user probably needs but nobody granted. Both endpoints score a pair the same way: the model's
+access a user probably needs but nobody granted. Both endpoints score a pair the same way, by the model's
 risk, and how many of the user's 10 most similar users can already reach the object (from the access
-history and from appeals). Neither writes anything: an admin gives access through the appeal flow.
+history and from appeals). Neither writes anything. An admin gives access through the appeal flow.
 
 ```
 GET  /corax/suggestions?limit=20
@@ -167,17 +239,17 @@ POST /corax/rank   {"user": "bob", "relation": "owned_by", "node": "department_f
 
 - A pair is suggested when its risk is at most the threshold and at least half of the 10 peers can reach
   the object. Both numbers are design choices, not measured values (`service/suggest.py`).
-- `rank` lists every object of the unit, best first, and warns when no peer can reach any of them: the
+- `rank` lists every object of the unit, best first, and warns when no peer can reach any of them, because the
   unit may be the wrong one.
 - `suggestions` scans every user against every object. Above 2,000,000 pairs it answers 422 and must be
   asked for one user (`?user=`).
-- Only admins call them: the results name objects the user cannot open.
+- Only admins call them, because the results name objects the user cannot open.
 
 - The exception (`<id>-exception.rego`) is written as soon as the appeal is created, the rule
   (`<id>-rule.rego`) only after the admin accepts one of the proposed rules. Both are validated with opa first and
   written atomically, so OPA never loads half a file.
 - An appeal is confirmed once.
-- Candidates skip values that are too specific to the appealed pair: a value both the user and the
+- Candidates skip values that are too specific to the appealed pair, such as a value both the user and the
   object have (the `user.X = object.Y` candidate covers it for every value), and a value of an
   attribute with several values (e.g. one of the projects a user works on). Otherwise one slice per
   value would rank above the general rule, because it opens fewer pairs.
@@ -287,7 +359,7 @@ not call the AI risk check.
 - If corax-service errors, times out, or does not know the user or object, the policy decision stands (`reason`: `allowed without AI check`).
 - Rules from appeals also go through the AI risk check. Only the exact pair an admin approved skips it.
 - Only listed admins can create or confirm appeals, and no rule can grant that.
-- An allowed request carries the verified user id to the upstream service in `x-corax-user` (set by Envoy from `result.headers`). corax-service does not rely on it: it verifies the admin's JWT itself.
+- An allowed request carries the verified user id to the upstream service in `x-corax-user` (set by Envoy from `result.headers`). corax-service does not rely on it, because it verifies the admin's JWT itself.
 
 ### Entry points
 
@@ -304,227 +376,69 @@ opa check --strict policy
 opa test policy -v
 ```
 
-## HGNN training
+## Security
 
-Trains the heterogeneous GraphSAGE model (implementation of the method in [[1]](evaluation.md#references)) and exports one embedding per node.
+### Invariants
 
-| File | Does |
+1. `allow = policy_allow AND NOT ai_high_risk`, so the risk score can only turn an allow into a deny.
+2. Rules from appeals only define `allow` in `app.generated` or `app.exceptions` and live only in
+   `policies/generated/`.
+3. Every rule records its origin, which is its appeal id, pattern, scope and tier. The appeal record keeps the
+   similar cases, the candidates and the history.
+4. Access granted by a rule from an appeal still goes through the risk score. Only the exact pair an
+   admin approved skips it.
+5. Policies change only through files. OPA's REST API is not used for writes and is not exposed.
+6. Every access an appeal grants is recorded when it is granted (who gained access to what, approved by
+   whom), every later use of it is logged, and a revoke through the API is recorded.
+
+### Threats and mitigations
+
+| Threat | Mitigation |
 |---|---|
-| `graph.py` | Loads `nodes.csv` / `edges.csv` into a PyTorch Geometric `HeteroData` |
-| `model.py` | Learnable node embeddings, 2 × SAGEConv + ReLU, `to_hetero`, dot-product decoder |
-| `train.py` | Link prediction training with early stopping, validation AUC |
-| `export.py` | Saves and loads embeddings and training metadata |
-| `__main__.py` | Command-line entry point: `python -m hgnn` |
+| A socially engineered appeal gets generalized | A human admin approves every appeal and picks the pattern. Large rules need a second confirmation |
+| Over-generalization | Candidates come only from the appellant's facts, narrowest first, with the exact users and pairs shown, within tier limits |
+| A wrong rule from an appeal | Equivalence check against the approved pattern. The risk score still denies pairs that do not fit the graph |
+| Graph poisoning [[5]](references.md) | `accessed` edges come only from allowed requests. The risk score checks newly opened pairs (mean risk in the tier) |
+| A rule tries to make someone an admin or touch other policy | Whitelist: only `allow` in the two appeal packages, only fixed input and graph references. `corax.*` actions ignore those packages |
+| Non-admin calls `/corax/appeals` | OPA allows `corax.*` actions only for `config.admin.users`. No application or appeal rule can grant them |
+| Someone reaches the service directly, bypassing Envoy and OPA | The service verifies the admin's JWT itself (same key, `iss`, `aud` and admin list as OPA, read from the same `data.json`, algorithm fixed by key type, `exp` and `sub` required). `/risk` must stay on the internal network |
+| Forged identity header (`x-corax-user`) | Ignored by the service. The audit log takes the admin from the verified JWT |
+| Rego injection through ids in an appeal | Ids are written as JSON string literals and appeal ids are checked against a fixed pattern. The whitelist rejects anything else |
+| The AI service is down or slow | The policy decision stands (`allowed without AI check`), never a silent allow beyond policy |
+| Access granted by an appeal is used without anyone noticing | Who gained access is recorded when the admin accepts, every use is logged, and every admin sees both in `GET /corax/rules` |
+| A user reads another user's access list | `GET /corax/me/access` takes the user only from the verified token. There is no user parameter |
+| Forged entries in the usage log through `/usage` | `/usage` is internal like `/risk`. It only appends to a log for access an appeal granted, and never changes a decision |
 
-Input format: [Data format](#data-format)</br> Concepts: [Risk score](how-it-works.md#risk-score)
+### Scope
 
-### Usage
+**In scope:** object-level authorization (BOLA), centralized policy-as-code (ABAC + ReBAC), an AI risk
+check that only tightens decisions, appeals that turn an admin's decision into a validated rule.
 
-From the repository root:
+**Out of scope:**
+- Broken Object Property Level Authorization (BOPLA): field-level response filtering and mass-assignment blocking.
+- Policy changes without human approval.
+- Production hardening (HA, multi-cluster).
 
-```bash
-python -m hgnn --data tests/hgnn/fixtures/toy_graph --target-relation accessed --out output/toy
-python scripts/evaluate/evaluate_hgnn.py --model-dir output/toy
-```
+### Known limitations
 
-Training runs once, then `evaluate_hgnn.py` loads the saved model and scores it on the held-out test edges.
+- Suggestions and unit rankings use design choices (10 peers, half of them with access, risk at most the threshold), not measured values. They help an admin decide and never grant anything.
+- The risk score is about pairs, not behavior over time. It does not detect fast enumeration by an
+  otherwise legitimate user.
+- Hard cases (an object a peer has) are caught less often than random ones. Read [evaluation](ai-model-and-evaluation.md#evaluation).
+- The usage log misses a use when the service is down or slower than `ai.timeout`. A use is logged for
+  the appeal even when the application's own rules would also have allowed it.
+- `GET /corax/me/access` lists only access from appeals, not access from the application's own rules.
 
-Options (defaults follow the paper): `--hidden 64`, `--num-layers 2`, `--learning-rate 0.001`,
-`--max-epochs 1000`, `--patience 10`, `--seed 0`. Not from the paper: `--test-ratio 0.1` (80/10/10
-split, 0 = no test set), `--hard-negative-ratio 0` (0.5 worked best on Amazon), `--target-pass-rate 0.99`
-(sets the exported risk threshold).
+### Future work
 
-### Output
-
-| File | Content |
-|---|---|
-| `embeddings.npz` | One float32 matrix per node type, row *i* belongs to `node_ids[type][i]` |
-| `node_ids.json` | Node type → list of node ids |
-| `metadata.json` | Settings, data size, best epoch, validation loss and AUC, calibrated `risk_threshold`, library versions |
-| `history.csv` | `epoch,train_loss,val_loss` for the learning curve |
-| `graph.json` | Node id → relation → destination ids, without the target relation. Read by corax-service and loaded by OPA as `data.corax.graph` |
-| `access.json` | User id → object ids of the target relation (access history). Read by corax-service only, to skip pairs that already have access |
-| `model.pt` | Trained weights, for `scripts/evaluate/evaluate_hgnn.py` |
-| `split.pt` | Held-out test edges and validation scores, for `scripts/evaluate/evaluate_hgnn.py` |
-
-## Scripts
-
-Every dataset follows the same flow. [Getting started](getting-started.md) walks through it on the dummy data.
-
-```
-prepare/   dataset → nodes.csv, edges.csv, scenarios.json, hidden/*.csv   (see Data format)   
-   │
-python -m hgnn   trains the HGNN once and saves the model folder           (the only place that trains)
-   │
-evaluate/  loads the saved model, never trains
-```
-
-| Script | Does |
-|---|---|
-| `check_env.py` | Checks that the Python environment has the required packages |
-| `demo_appeal.py` | Demo on the dummy data: three appeals (small rule written, large rule refused with 409, exception only) end to end, then opa evaluates the written Rego. Nothing is trained |
-| `demo_risk.py` | Demo: the risk score on held-out pairs the model never saw, next to the true answer. Nothing is trained or written |
-| `similar_cases.py` | For one appealed (user, object) pair: the kNN similar cases, the candidate patterns and, with `--pick N`, the tier, Rego and validation of candidate N. Nothing is written |
-| `prepare/make_dummy.py` | Writes the small dummy data graph with two appeal scenarios, for tests and local trials |
-| `prepare/convert_amazon.py` | Converts the UCI Amazon Access Samples dataset (CC BY 4.0) |
-| `prepare/make_amazon_scenarios.py` | Hides inferred role-based rules (title → resource) in the Amazon graph, for evaluating appeals |
-| `prepare/convert_xu_stoller.py` | Converts a Xu & Stoller ABAC policy (`.abac`) with one rule hidden (`--hide-rule N`) or each rule in turn (`--all-rules`) |
-| `prepare/appeal_scenarios.py` | Reads and writes `scenarios.json` (used by the scripts above) |
-| `prepare/make_enterprise.py`, `prepare/make_office.py` | The synthetic enterprise and office graphs of the document app demo ([scripts/README.md](../scripts/README.md)) |
-| `demo_gateway.py`, `demo_office.py`, `demo_office_cases.py`, `demo_backend.py` | The document app demo: prepare its graph and model, then send its cases through the Docker gateway ([docs/demo.md](demo.md)) |
-| `evaluate/evaluate_hgnn.py` | Test metrics of the risk score and the risk threshold calibration table |
-| `evaluate/evaluate_knn.py` | kNN precision@k, rank of the hidden rule among the candidate patterns, and its tier |
-
-### Dummy data
-
-```bash
-python scripts/prepare/make_dummy.py output/dummy-data
-python -m hgnn --data output/dummy-data --target-relation accessed --out output/dummy --learning-rate 0.01 --patience 50
-python scripts/demo_risk.py --model-dir output/dummy
-python scripts/demo_appeal.py --model-dir output/dummy --opa path/to/opa
-python scripts/evaluate/evaluate_knn.py --model-dir output/dummy --scenarios output/dummy-data/scenarios.json
-python scripts/similar_cases.py --model-dir output/dummy --user lecturer_head_P0 --object student_P0_05
-```
-
-The candidate "user.member_of = object.member_of AND user holds position_head_of_program" should be
-among the first few.
-
-### Amazon dataset
-
-1. Download `amzn-anon-access-samples-2.0.csv` from
-   [UCI](https://archive.ics.uci.edu/dataset/216/amazon+access+samples) into `datasets/` (git-ignored, about 4.8 GB).
-2. Convert (about 1 minute):
-
-   ```bash
-   python scripts/prepare/convert_amazon.py datasets/amzn-anon-access-samples-2.0.csv datasets/amazon-graph
-   ```
-
-   Expected: 36,063 users, 33,252 resources, 405 departments, 4,979 titles, 3,207 managers,
-   595,506 `has_potential_access` edges.
-3. Risk score: train once (80/10/10), then evaluate the saved model:
-
-   ```bash
-   python -m hgnn --data datasets/amazon-graph --target-relation has_potential_access --hard-negative-ratio 0.5 --out output/exp-hard50
-   python scripts/evaluate/evaluate_hgnn.py --model-dir output/exp-hard50
-   ```
-
-4. Appeals: hide 10 inferred rules "title T gets resource R" (413 access edges) plus 2 one-off appeals.
-   One training run covers all of them.
-
-   ```bash
-   python scripts/prepare/make_amazon_scenarios.py datasets/amazon-graph datasets/amazon-appeals
-   python -m hgnn --data datasets/amazon-appeals --target-relation has_potential_access --out output/amazon-appeals
-   python scripts/evaluate/evaluate_knn.py --model-dir output/amazon-appeals --scenarios datasets/amazon-appeals/scenarios.json
-   ```
-
-### Xu & Stoller ABAC policies
-
-Standard policy mining benchmark [[6]](evaluation.md#references). Download `ABAC-Mining.zip` from Stoller's
-[software page](https://www3.cs.stonybrook.edu/~stoller/software/) into `datasets/xu-stoller/` and
-extract the `.abac` files there. The archive is GPL-3.0: keep it under `datasets/` (git-ignored). The
-scripts here only read the format.
-
-Each rule is hidden in turn: the pairs only that rule grants are removed from the access edges, so every
-rule gives its own data folder and its own model. Candidates use up to 3 predicates and `object has ...`
-(the resource type matters in every rule). Rule 3 of the university policy is skipped: rule 2 already
-grants all its pairs.
-
-```bash
-# 1. prepare: output/xu-stoller/<file>/rule_NN/data
-for f in datasets/xu-stoller/ABACMining/gen-case-studies/university/university-sets_10_*.abac; do python scripts/prepare/convert_xu_stoller.py "$f" "output/xu-stoller/$(basename "$f" .abac)" --all-rules; done
-# 2. train each once: output/xu-stoller/<file>/rule_NN/model (about 5 seconds each)
-for d in output/xu-stoller/*/rule_*; do python -m hgnn --data "$d/data" --target-relation accessed --out "$d/model" --learning-rate 0.01 --patience 50 --test-ratio 0; done
-# 3. evaluate the saved models (no training)
-python scripts/evaluate/evaluate_knn.py --runs "output/xu-stoller/*/rule_*" --out output/xu-stoller/results.json
-```
-
-The `ir-gen-case-studies` folder holds the same policies with irrelevant attributes added, for a noise test.
-
-## Data format
-
-Corax does not know about any specific domain. Any application (a company, a hospital, a shop)
-describes its users, objects and relations as a typed graph in two CSV files.
-
-### nodes.csv
-
-| Column | Meaning |
-|---|---|
-| `id` | Unique node id across the whole file, e.g. `alice` |
-| `type` | Node type, e.g. `employee`, `report`, `department` |
-
-```csv
-id,type
-alice,employee
-report_105,report
-department_sales,department
-```
-
-### edges.csv
-
-| Column | Meaning |
-|---|---|
-| `src` | Source node id (must exist in `nodes.csv`) |
-| `relation` | Relation name, e.g. `works_on`, `member_of` |
-| `dst` | Destination node id (must exist in `nodes.csv`) |
-
-```csv
-src,relation,dst
-alice,member_of,department_sales
-alice,accessed,report_105
-```
-
-The edge type is the triple `(source type, relation, destination type)`, derived from the node types.
-The same relation name may connect different node types, e.g. `(employee, member_of, department)` and
-`(report, member_of, department)` are two edge types.
-
-### Rules
-
-- Every node type must appear in at least one edge.
-- One relation is the **target relation** for link prediction (passed as `--target-relation`).
-  It must connect exactly one pair of node types, e.g. `accessed` from `employee` to `report`.
-  Its edges should come only from requests the policy allowed.
-- Extra columns are allowed and ignored by the HGNN.
-
-### scenarios.json (appeal evaluation only)
-
-Optional. Only `scripts/evaluate/evaluate_knn.py` reads it, training and the running service do not.
-Each scenario is an appeal with a known answer: the pairs of a rule that was removed from the access
-edges (`hidden/<name>.csv`), and the predicates of that rule.
-
-```json
-{
-  "target_relation": "accessed",
-  "object_identity": false,
-  "object_values": false,
-  "max_size": 2,
-  "scenarios": [
-    {
-      "name": "manager",
-      "appeal": ["alice", "report_105"],
-      "expected": [
-        {"kind": "shared", "relation": "member_of", "other": "member_of"},
-        {"kind": "user_has", "relation": "holds", "other": "role_manager"}
-      ],
-      "hidden": "hidden/manager.csv"
-    },
-    {"name": "one_off", "appeal": ["bob", "report_731"], "expected": null, "hidden": null}
-  ]
-}
-```
-
-| Field | Meaning |
-|---|---|
-| `target_relation` | Same as `--target-relation` for training |
-| `object_identity`, `object_values`, `max_size` | Candidate options: allow `object is <id>`, allow `object has <value>`, max predicates per candidate (defaults `false`, `false`, `2`) |
-| `appeal` | The (user, object) pair that is appealed. It must not be in the access edges |
-| `expected` | Predicates of the hidden rule (kinds: `user_has`, `object_has`, `shared`, `direct`, `object_is`), or `null` for a one-off appeal from which nothing should be generalized |
-| `hidden` | CSV with `user,object` rows: every pair the hidden rule grants and the access edges leave out, or `null` |
-
-The data folder then looks like:
-
-```
-nodes.csv
-edges.csv
-scenarios.json
-hidden/manager.csv
-```
+- Production deployment: JWKS, TLS between Envoy, OPA and the service, health checks.
+- Behavior features (request rate) to detect enumeration by an otherwise legitimate user.
+- Inductive node features, so new users and objects get a risk score without retraining.
+- Mini-batch training for graphs that do not fit in memory.
+- Ranking candidates by how varied the similar cases are, so object-only slices rank lower.
+- Category depth (distance from the root of an organization tree) as an extra tier input, where such a tree exists.
+- Calibrated tier limits. The limits on the share of users, new pairs and mean risk are design defaults, not measured values, and no standard fixes them. Derive them from rules known to be correct and rules known to be too broad, and allow the pairs limit as a share of existing access.
+- Policy languages other than Rego. The graph, the risk score and the appeal flow do not depend on Rego. Only the rule writer, its validation and the enforcement point do.
+- Asking for a unit in free text. Users choose a unit from a list today. Matching what they type ("money reports") to a unit ("Finance") needs a language model or a list of synonyms, and free text must not become a way to probe which units or documents exist.
+- Urgent access (break-glass). Corax has no way to grant access at once and review it afterwards, because every access waits for an admin. An urgent case goes to an admin on call.
+- Blocking access the application's own rules grant. Revoking takes back only what an appeal opened. A list of blocked (user, object) pairs, checked in `authz.rego` as `policy_allow AND NOT ai_high_risk AND NOT blocked`, would let an admin close access that a role or department rule allows, until that rule is fixed.

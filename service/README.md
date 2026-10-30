@@ -27,4 +27,4 @@ pip install -r service/requirements.txt
 CORAX_MODEL_DIR=<model folder> uvicorn main:app --app-dir service --port 8000
 ```
 
-Endpoints, environment variables and admin authentication: [docs/reference.md](../docs/reference.md#service-api).
+Endpoints, environment variables and admin authentication: [docs/scripts.md](../docs/architecture.md#service-api).

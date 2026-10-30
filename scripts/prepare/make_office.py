@@ -4,7 +4,7 @@
     python -m hgnn --data output/office --target-relation accessed --out output/office-hgnn
     python scripts/prepare/make_office.py label output/office output/office-hgnn
 
-generate writes nodes.csv and edges.csv (docs/reference.md, data format), scenarios.json with hidden/ (the
+generate writes nodes.csv and edges.csv (docs/scripts.md, data format), scenarios.json with hidden/ (the
 appeals, see appeal_scenarios.py) and cases.json. Every seed gives another office: which
 departments and sites it has, how many teams and documents, who holds which role. The office:
 

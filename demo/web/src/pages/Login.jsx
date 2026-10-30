@@ -8,23 +8,25 @@ import { useSession } from "../SessionContext.jsx";
 // prepare), or these, of the enterprise of scripts/prepare/make_enterprise.py.
 const ACCOUNTS = [
   ["e049", "Engineering coordinator"], ["e085", "Finance coordinator"], ["e040", "Engineer"],
-  ["e003", "Sales analyst"], ["e001", "Sales manager"], ["e076", "Auditor"], ["admin_01", "Corax admin"],
+  ["e111", "Security officer"], ["e003", "Sales analyst"], ["admin_01", "Corax admin"],
 ];
 
 // an input drawn as a line, on the see-through card
 const LINE_INPUT = "w-full border-0 border-b border-glass-line bg-transparent px-1 py-2 text-lg text-ink placeholder:text-ink/80 focus:border-ink focus:outline-none";
 
-// How many of the employee accounts the page leaves out of its buttons (the last ones), so the list
-// stays short. The admin's is always shown, and every account still signs in by typing its username.
+// How many of the prepared employee accounts the page leaves out of its buttons (the last ones), so the
+// list stays short. The built-in list is shown whole. Every account still signs in by typing its username.
 const HIDDEN = 5;
 
 async function demoAccounts() {
-  let all = ACCOUNTS;
+  let prepared = null;
   try {
     const response = await fetch("/assets/accounts.json");
     const accounts = response.ok ? (await response.json()).accounts : null;
-    if (Array.isArray(accounts) && accounts.length) all = accounts.map((a) => [a.username, a.label]);
+    if (Array.isArray(accounts) && accounts.length) prepared = accounts.map((a) => [a.username, a.label]);
   } catch { /* no prepared accounts: the built-in ones */ }
+  if (!prepared) return ACCOUNTS;
+  const all = prepared;
   const admins = all.filter(([user]) => user.startsWith("admin"));
   const employees = all.filter(([user]) => !user.startsWith("admin"));
   return [...employees.slice(0, Math.max(employees.length - HIDDEN, 1)), ...admins];

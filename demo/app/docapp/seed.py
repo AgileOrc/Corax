@@ -12,8 +12,10 @@ from pathlib import Path
 from .security import hash_password
 
 FIRST = ["Ana", "Budi", "Citra", "Dewi", "Eko", "Fajar", "Gita", "Hana", "Indra", "Joko", "Kartika", "Lina",
-         "Maya", "Nadia", "Oscar", "Putri", "Rizky", "Sari", "Tono", "Umar", "Vera", "Wulan", "Yusuf", "Zahra",
-         "Anna", "Bram", "Chloe", "Daan", "Eva", "Finn", "Greta", "Hugo", "Iris", "Jens", "Lotte", "Milan"]  # fmt: skip
+         "Maya", "Nadia", "Olaf", "Putri", "Rizky", "Sari", "Tono", "Umar", "Vera", "Wulan", "Yusuf", "Zahra",
+         "Anna", "Bram", "Clara", "Daan", "Eva", "Finn", "Greta", "Hugo", "Iris", "Jens", "Lotte", "Milan"]  # fmt: skip
+# the README scenario: the only Chloe and the only Oscar
+NAMED = {"employee_E049": "Chloe Bakker", "employee_E085": "Oscar Weber"}
 LAST = ["Wijaya", "Santoso", "Pratama", "Halim", "Kusuma", "Tan", "Lim", "Nugroho", "Setiawan", "Hartono",
         "de Vries", "Jansen", "Bakker", "Visser", "Smit", "Meyer", "Schmidt", "Weber", "Fischer", "Koch"]  # fmt: skip
 TOPICS = {
@@ -74,7 +76,7 @@ def seed(connection: sqlite3.Connection, seed_dir: Path, admins: frozenset[str],
                 (admin, admin, "Corax admin", hash_password(password, iterations)),
             )
         for employee in employees:
-            name = f"{_pick(employee, FIRST)} {_pick(employee, LAST, 'last')}"
+            name = NAMED.get(employee) or f"{_pick(employee, FIRST)} {_pick(employee, LAST, 'last')}"
             connection.execute(
                 "INSERT INTO users (id, username, name, kind, role, department, team, site, region,"
                 " manager, password) VALUES (?, ?, ?, 'employee', ?, ?, ?, ?, ?, ?, ?)",

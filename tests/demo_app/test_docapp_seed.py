@@ -35,3 +35,12 @@ def test_seeds_once_and_the_same_every_time(settings, corax, opa, client, auth):
         headers = auth(via=again, username="e001")
         assert again.get("/me", headers=headers).json()["name"] == name
         assert len(again.get("/access-requests", headers=headers).json()["requests"]) == 1
+
+
+def test_the_readme_scenario_names_are_unique(settings, client):
+    with db.session(settings.database) as c:
+        names = [row[0] for row in c.execute("SELECT name FROM users WHERE kind = 'employee'")]
+        roles = dict(c.execute("SELECT id, role || ' ' || department FROM users WHERE id IN ('employee_E049', 'employee_E085')").fetchall())
+    assert [n for n in names if n.startswith("Chloe ")] == ["Chloe Bakker"]
+    assert [n for n in names if n.startswith("Oscar ")] == ["Oscar Weber"]
+    assert roles == {"employee_E049": "coordinator engineering", "employee_E085": "coordinator finance"}
