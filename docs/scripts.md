@@ -67,7 +67,7 @@ evaluate/  loads the saved model, never trains
 | `prepare/make_amazon_scenarios.py` | Hides inferred role-based rules (title → resource) in the Amazon graph, for evaluating appeals |
 | `prepare/convert_xu_stoller.py` | Converts a Xu & Stoller ABAC policy (`.abac`) with one rule hidden (`--hide-rule N`) or each rule in turn (`--all-rules`) |
 | `prepare/appeal_scenarios.py` | Reads and writes `scenarios.json` (used by the scripts above) |
-| `prepare/make_enterprise.py`, `prepare/make_office.py` | The synthetic enterprise and office graphs of the document app demo ([scripts/README.md](../scripts/README.md)) |
+| `prepare/make_enterprise.py`, `prepare/make_office.py` | The synthetic enterprise and office graphs of the document app demo ([scripts/README.md](https://github.com/AgileOrc/Corax/blob/main/scripts/README.md)) |
 | `demo_gateway.py`, `demo_office.py`, `demo_office_cases.py`, `demo_backend.py` | The document app demo: prepare its graph and model, then send its cases through the Docker gateway ([docs/demo.md](demo.md)) |
 | `evaluate/evaluate_hgnn.py` | Test metrics of the risk score and the risk threshold calibration table |
 | `evaluate/evaluate_knn.py` | kNN precision@k, rank of the hidden rule among the candidate patterns, and its tier |
