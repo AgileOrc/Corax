@@ -1,6 +1,6 @@
 # Table of contents
 
-* [Corax documentation](README.md)
+* [Corax Documentation](README.md)
 * [Getting Started](getting-started.md)
 * [Running the Demo](demo.md)
 * [Architecture](architecture.md)
