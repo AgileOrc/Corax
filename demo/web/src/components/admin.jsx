@@ -5,7 +5,6 @@ import { useState } from "react";
 import { api } from "../api.js";
 import { documentName, personName } from "../directory.js";
 import { errorText, initials, place, short, titled } from "../format.js";
-import { LevelBadge } from "./badges.jsx";
 import { Modal } from "./Modal.jsx";
 import { useToast } from "./Toasts.jsx";
 import { Badge, Button, inputClass } from "./ui.jsx";
@@ -20,18 +19,6 @@ export function Person({ r }) {
         <b>{r.user_name}</b> <span className="text-[13px] text-muted">{short(r.user_id)}</span>
         <div className="text-[13px] text-muted">{titled(r.user_role)}, {titled(r.user_department)}{r.user_site ? ` · ${place(r.user_site, r.user_region)}` : ""}</div>
       </div>
-    </div>
-  );
-}
-
-// The document of a request, with its details
-export function RequestedDocument({ r, label = "asks for", onOpen }) {
-  return (
-    <div>
-      <span className="text-[13px] text-muted">{label}</span>{" "}
-      {onOpen ? <OpenTitle onClick={onOpen}>{r.document_title}</OpenTitle> : <b>{r.document_title}</b>} <span className="text-[13px] text-muted">{short(r.document_id)}</span>{" "}
-      <LevelBadge level={r.document_classification} />{" "}
-      <span className="text-[13px] text-muted">{titled(r.document_department)} · stored at {place(r.document_site, r.document_region)}</span>
     </div>
   );
 }

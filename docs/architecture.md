@@ -14,9 +14,24 @@ with who gained access and how that access is used, and revoked by deleting its 
 | Component | Does | Reads | Writes | Reachable from |
 |---|---|---|---|---|
 | Envoy | Proxy in front of the application, asks OPA about every request (`ext_authz`) | | | Clients |
-| OPA | Policy engine: JWT, route, policy, AI risk call | `policy/`, the application's rules, `policies/generated/`, `data.json`, `graph.json` | | Envoy only |
+| OPA | Policy engine: JWT, route, policy, AI risk call | `policy/`, the application's rules, `policies/generated/`, `data.json`, `graph.json` | | Envoy, and services on the internal network that ask it directly |
 | `service` | `/risk` and `/usage` for OPA, `/corax/*` for admins and users | Model folder, `data.json` | `policies/generated/`, appeal records, access snapshots, usage logs | OPA and Envoy only |
 | `hgnn` | Offline job: trains the model and exports it (`python -m hgnn`) | `nodes.csv`, `edges.csv` | Model folder | Nobody |
+
+### Deployment modes
+
+OPA, with Corax's policy and the risk check behind it, is the policy decision point (PDP). What enforces its
+answer, the policy enforcement point (PEP), can take two forms.
+
+| Mode | Enforcement point | How it asks | In the demo |
+|---|---|---|---|
+| Sidecar | Envoy in front of the API (`ext_authz`) | Every request, before it reaches the API | Every call to the document app |
+| Policy decision point | The gateway or service itself | A query to OPA's REST API, for example `POST /v1/data/corax/authz/allowed_objects` | The document app lists only the documents a user may open |
+
+Both modes use the same rules and the same rules from appeals. `allowed_objects` checks only those rules and
+never calls the AI, because it filters a list. The AI risk check runs when the user then opens one of the
+objects through Envoy. A service that asks OPA directly must enforce the answer itself, and must reach OPA only
+over the internal network.
 
 ## Request path
 
@@ -134,7 +149,7 @@ under `service` → `environment`:
 Then recreate the service with `docker compose -f deploy/docker-compose.yml up -d service`. Without Docker:
 
 ```bash
-AUTO_APPLY_MAX_USER_SHARE=0.5 CORAX_MODEL_DIR=output/dummy uvicorn main:app --app-dir service --port 8000
+AUTO_APPLY_MAX_USER_SHARE=0.5 CORAX_MODEL_DIR=output/gateway/hgnn uvicorn main:app --app-dir service --port 8000
 ```
 
 The document app demo sets `AUTO_APPLY_MAX_USER_SHARE` to `0.06` in `deploy/docker-compose.yml`, which is 5 of

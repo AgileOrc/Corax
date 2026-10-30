@@ -48,7 +48,7 @@ split, 0 = no test set), `--hard-negative-ratio 0` (0.5 worked best on Amazon), 
 
 ## Scripts
 
-Every dataset follows the same flow. [Getting started](getting-started.md) walks through it on the dummy data.
+These docs use one dataset throughout, the demo company that `prepare` generates for the Docker demo ([Getting started](getting-started.md#deploy-with-docker)). Every dataset follows the same flow.
 
 ```
 prepare/   dataset → nodes.csv, edges.csv, scenarios.json, hidden/*.csv   (see Data format)   
@@ -61,10 +61,8 @@ evaluate/  loads the saved model, never trains
 | Script | Does |
 |---|---|
 | `check_env.py` | Checks that the Python environment has the required packages |
-| `demo_appeal.py` | Demo on the dummy data: three appeals (small rule written, large rule refused with 409, exception only) end to end, then opa evaluates the written Rego. Nothing is trained |
 | `demo_risk.py` | Demo: the risk score on held-out pairs the model never saw, next to the true answer. Nothing is trained or written |
 | `similar_cases.py` | For one appealed (user, object) pair: the kNN similar cases, the candidate patterns and, with `--pick N`, the tier, Rego and validation of candidate N. Nothing is written |
-| `prepare/make_dummy.py` | Writes the small dummy data graph with two appeal scenarios, for tests and local trials |
 | `prepare/convert_amazon.py` | Converts the UCI Amazon Access Samples dataset (CC BY 4.0) |
 | `prepare/make_amazon_scenarios.py` | Hides inferred role-based rules (title → resource) in the Amazon graph, for evaluating appeals |
 | `prepare/convert_xu_stoller.py` | Converts a Xu & Stoller ABAC policy (`.abac`) with one rule hidden (`--hide-rule N`) or each rule in turn (`--all-rules`) |
@@ -73,20 +71,20 @@ evaluate/  loads the saved model, never trains
 | `demo_gateway.py`, `demo_office.py`, `demo_office_cases.py`, `demo_backend.py` | The document app demo: prepare its graph and model, then send its cases through the Docker gateway ([docs/demo.md](demo.md)) |
 | `evaluate/evaluate_hgnn.py` | Test metrics of the risk score and the risk threshold calibration table |
 | `evaluate/evaluate_knn.py` | kNN precision@k, rank of the hidden rule among the candidate patterns, and its tier |
+| `prepare/make_dummy.py`, `demo_appeal.py` | A small dummy graph and three appeals on it, for the tests and for development ([Small test data](#small-test-data)) |
 
-### Dummy data
+### Small test data
+
+The tests use a small dummy graph, because it trains in seconds. You do not need it to try Corax.
 
 ```bash
 python scripts/prepare/make_dummy.py output/dummy-data
 python -m hgnn --data output/dummy-data --target-relation accessed --out output/dummy --learning-rate 0.01 --patience 50
-python scripts/demo_risk.py --model-dir output/dummy
 python scripts/demo_appeal.py --model-dir output/dummy --opa path/to/opa
-python scripts/evaluate/evaluate_knn.py --model-dir output/dummy --scenarios output/dummy-data/scenarios.json
-python scripts/similar_cases.py --model-dir output/dummy --user lecturer_head_P0 --object student_P0_05
 ```
 
-The candidate "user.member_of = object.member_of AND user holds position_head_of_program" should be
-among the first few.
+`demo_appeal.py` runs three appeals on it end to end, a narrow rule, a broad rule and an exception only, and
+then lets OPA decide on the Rego it wrote.
 
 ### Amazon dataset
 
@@ -227,15 +225,19 @@ edges.csv
 scenarios.json
 hidden/manager.csv
 ```
-## Try Corax without Docker
+## The demo company without Docker
 
-### The AI predicts access it has never seen
+The Docker demo is the way to see Corax. These scripts look inside the same model from the host, without the
+gateway. Run `prepare` first ([Getting started](getting-started.md#deploy-with-docker)). It writes the demo
+company to `output/gateway/data` and its model to `output/gateway/hgnn`, and the scripts read both.
+
+### The AI on access it has never seen
 
 ```bash
-python scripts/demo_risk.py --model-dir output/dummy
+python scripts/demo_risk.py --model-dir output/gateway/hgnn
 ```
 
-The script scores pairs from the test split and puts the true answer next to the AI's:
+The script scores pairs from the test split, which training never saw, and puts the true answer next to the AI's.
 
 | Row | Meaning | The AI should |
 |---|---|---|
@@ -243,63 +245,38 @@ The script scores pairs from the test split and puts the true answer next to the
 | **not allowed** | A random pair without access | Deny it |
 | **peer has it** | A pair without access, but a peer of the user has the object. It looks normal, the hardest case | Deny it |
 
-```
-threshold 0.992; all held-out pairs, none seen during training:
-  allowed      49/49 let through (100%)
-  not allowed  85/98 denied (87%)
-  peer has it  32/47 denied (68%)
-```
+A pair is denied when its risk is above the threshold, the same rule `/risk` uses. In the real flow the AI only
+sees requests the rules already allowed. The "not allowed" rows show what it would catch if a wrong or
+over-broad rule let such a request through. A miss there means the AI adds no deny, and the rules' decision
+stands.
 
-A pair is denied when its risk is above the threshold, the same rule `/risk` uses. In the real flow the AI
-only sees requests the policy already allowed. The "not allowed" rows show what it would catch if a
-wrong or over-broad rule let such a request through. A miss there means the AI adds no deny and the
-policy decision stands.
+### One appeal, step by step
 
-### Appeals, end to end with OPA
-
-Needs the [OPA binary](https://www.openpolicyagent.org/docs/latest/#running-opa).
+Chloe's request from the demo, with its similar cases, the candidate rules, and the tier, Rego and validation of
+the first one. Nothing is written.
 
 ```bash
-python scripts/demo_appeal.py --model-dir output/dummy --opa path/to/opa
+python scripts/similar_cases.py --model-dir output/gateway/hgnn --user employee_E049 --object document_D057 --pick 1
 ```
 
-The script runs the same code as the `/corax/appeals` endpoints (without HTTP and JWT), writes the Rego
-files to a temporary folder (`--out` keeps them), then lets OPA decide on them.
-
-In every appeal the admin accepts the request, and Corax proposes candidate rules. The admin accepts one
-of them, by what it says and not by its size, or none. Corax then computes the tier of the accepted rule
-from its share of users, new pairs and mean risk. The script plays the admin:
-
-| Appeal | Rule the admin accepts | Tier (computed by Corax) | Result |
-|---|---|---|---|
-| 1 | Users with the appellant's role may access objects of their own group | **Small** | Written at once. Another user in the same situation, who never appealed, is allowed |
-| 2 | Everyone in a group may access objects of that group | **Large** | 409 response code, nothing written until the admin confirms again with `acknowledge_scope` |
-| 3 | None, the appeal is a one-off | | **Exception only**: just that one pair is opened |
-
-To look at a single appeal with all its similar cases and candidates, without writing anything:
-
-```bash
-python scripts/similar_cases.py --model-dir output/dummy --user <user> --object <object> --pick 1
-```
+The validation needs the [OPA binary](https://www.openpolicyagent.org/docs/latest/#running-opa). Without it, the script
+shows everything else and says the validation was skipped. Pass `--opa path/to/opa` if it is not on the `PATH`.
 
 How appeals work is in [Appeal path](ai-model-and-evaluation.md#appeal-path).
 
 ### The risk endpoint as OPA calls it
 
 ```bash
-CORAX_MODEL_DIR=output/dummy uvicorn main:app --app-dir service --port 8000
+CORAX_MODEL_DIR=output/gateway/hgnn uvicorn main:app --app-dir service --port 8000
 ```
 
 ```bash
-curl -X POST localhost:8000/risk -H "Content-Type: application/json" -d '{"user": "<user>", "object": "<object>"}'
+curl -X POST localhost:8000/risk -H "Content-Type: application/json" -d '{"user": "employee_E049", "object": "document_D057"}'
 ```
 
-```json
-{"risk": 0.99993, "high_risk": true, "threshold": 0.992, "reason": null}
-```
-
-User and object ids are listed in `output/dummy/node_ids.json`. `/risk` uses the embeddings of the whole
-graph, so its numbers differ slightly from `demo_risk.py`, which recomputes them without the test edges.
+The answer has the risk, whether it is above the threshold, and the threshold. Every user and object id is in
+`output/gateway/hgnn/node_ids.json`. `/risk` uses the embeddings of the whole graph, so its numbers differ
+slightly from `demo_risk.py`, which recomputes them without the test edges.
 
 ### Larger datasets
 

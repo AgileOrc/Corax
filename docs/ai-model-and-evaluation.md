@@ -313,4 +313,4 @@ rank lower (5 to 11), because every value of that attribute gives a narrower can
 - Xu & Stoller: [Scripts → Xu & Stoller](scripts.md#xu--stoller-abac-policies). The `.abac`
   files are GPL-3.0 and are not part of this repository.
 - Amazon: [Scripts → Amazon](scripts.md#amazon-dataset).
-- Dummy data: [Getting started](getting-started.md).
+- Dummy data: [Small test data](scripts.md#small-test-data).

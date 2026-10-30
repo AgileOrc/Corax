@@ -92,48 +92,71 @@ Tested on public data, with every number reproducible from the repository.
 How each number was measured is in [AI model and evaluation](docs/ai-model-and-evaluation.md#evaluation).
 
 ## Under the hood
+### The building blocks
 
-Corax runs as a sidecar in front of an API. Envoy forwards every request to OPA, which evaluates the
-organization's ABAC and ReBAC policy written in Rego. When the policy allows a request, OPA asks the Corax
-service for a risk score from a heterogeneous GraphSAGE model of users, objects and their relations, an
-implementation of the graph method of [Yin et al. (2024)](docs/references.md).
+- **OPA (Open Policy Agent)** is an open-source engine that answers one question for every request, whether it is
+  allowed. It is a graduated project of the Cloud Native Computing Foundation and widely used for this job.
+- **Rego** is the language OPA rules are written in. A rule reads like "a coordinator may read the documents of
+  their own department". Because the rules are code, they can be reviewed, tested and versioned like the rest of
+  the software.
+- **ABAC and ReBAC** are the two kinds of rules Corax supports. Attribute-based rules look at properties, such as
+  a role, a department or a document's classification. Relationship-based rules look at links, such as who works
+  on which project or who reports to whom.
+- **Envoy** is a widely used proxy, a program that sits between users and an application and passes their
+  requests on.
+
+### 2 ways to plug Corax in
+
+Corax can be deployed in 2 ways, and the demo uses both:
+
+- **As a sidecar:** A sidecar is a helper that runs next to an application and takes one job off its hands. Here
+  Envoy stands in front of the API and asks OPA about every request before it reaches the application, so the
+  application itself needs no access checks.
+- **As a policy decision point (PDP):** The PDP is the part that decides, while the application keeps the job of
+  enforcing the answer. The application asks OPA "may this person do this?" and acts on the reply. The demo's
+  document app does this to list only the documents a user may open.
+
+### How the Corax AI fits in
+
+When the rules allow a request, OPA asks the Corax service for a risk score. The score comes from a graph neural
+network, a model that learns from the network of people, documents and how they are connected. Corax uses a
+heterogeneous GraphSAGE model, an implementation of the method of [Yin et al. (2024)](docs/references.md).
 
 | Layer | Role | Can it grant access? |
 |---|---|---|
-| Policy (OPA, Rego) | Final authority, deterministic | Yes |
-| AI risk check | Flags requests that passed the policy but do not fit the access graph | No |
-| Appeals | Turns an administrator's decision into a rule | Only through a validated rule. Broad rules need a second confirmation |
+| Rules (OPA, written in Rego) | Final authority, the same answer every time | Yes |
+| AI risk check | Flags requests that passed the rules but do not fit how people actually work | No |
+| Appeals | Turns an administrator's decision into a new rule | Only through a validated rule. Broad rules need a second confirmation |
 
-- **Deny-only AI**: `allow = policy_allow AND NOT ai_high_risk`, written in Rego so it can be audited.
-- **Appeals that generalize**: similar cases from a k-nearest-neighbor search on the model's embeddings
-  become candidate rules built from the appellant's own facts.
-- **Blast-radius tiers**: the share of users reached, the number of new accesses and their mean risk decide
-  whether a rule applies at once or waits for a second confirmation.
-- **Validated Rego**: syntax, an attribute whitelist, the application's own tests, and equivalence with the
-  approved pattern.
-- **Live reload, instant revoke**: each rule is its own `.rego` file. OPA loads a new one within milliseconds
+- **Deny-only AI:** A request is allowed only when the rules allow it and the AI does not find it risky. The AI
+  can block a request the rules allow, but it cannot grant access the rules deny. The decision is expressed as a
+  single Rego statement, which keeps it open to audit.
+- **Appeals that generalize:** The model turns every person and document into a list of numbers, an embedding,
+  where similar ones sit close together. Corax looks up the cases closest to the approved one and builds candidate
+  rules from the facts of the person who asked.
+- **Blast-radius tiers:** The blast radius is how far a rule would reach if it were wrong. Corax measures it by the
+  share of people reached, the number of new accesses and how unusual they are, and decides whether a rule applies
+  at once or waits for a second confirmation.
+- **Validated Rego:** Every generated rule is checked for syntax, uses only allowed attributes, passes the
+  application's own tests, and must grant exactly what the administrator approved.
+- **Live reload, instant revoke:** Each rule is its own `.rego` file. OPA loads a new one within milliseconds
   without a restart, and revoking deletes the file.
 
 ## Quick start
 
-See the model predict access it has never seen, without Docker:
-
-```bash
-python scripts/prepare/make_dummy.py output/dummy-data
-python -m hgnn --data output/dummy-data --target-relation accessed --out output/dummy --learning-rate 0.01 --patience 50
-python scripts/demo_risk.py --model-dir output/dummy
-```
-
-The full demo with Envoy, OPA, the Corax service and a document app, with Docker:
+All you need is Docker. From the repository root:
 
 ```bash
 docker compose -f deploy/docker-compose.yml run --rm prepare
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
-Then open http://localhost:8080 for the document app and http://localhost:8090 for the Corax console.
+The first command generates the demo company and trains the model, which takes a few minutes the first time. The
+second starts the gateway, the policy engine, the Corax service and the document app.
 
-Installation and requirements are in [Getting started](docs/getting-started.md).
+Then open http://localhost:8080 and sign in as Chloe (`e049`) or the administrator (`admin_01`). The sign-in page
+lists the demo accounts, and [Running the demo](docs/demo.md) walks through every scenario. The requirements and
+the full setup are in [Getting started](docs/getting-started.md).
 
 ## Documentation
 
