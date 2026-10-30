@@ -1,4 +1,5 @@
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -85,6 +86,19 @@ def test_trained_model_can_be_loaded_again(tmp_path):
     assert torch.equal(split["test_data"][graph.target].edge_label_index,
                        result.test_data[graph.target].edge_label_index)
     assert torch.equal(split["val_probs"], result.val_probs)
+
+
+def test_a_model_trained_elsewhere_finds_the_data_next_to_it(tmp_path):
+    # as after `prepare` in Docker: the recorded path is the container's, the data sits next to the model
+    data = tmp_path / "data"
+    shutil.copytree(TOY, data)
+    graph = load_graph(data, "accessed")
+    save(train(graph, FAST), graph, FAST, tmp_path / "hgnn", data_folder="/corax/output/gateway/data")
+
+    _, loaded_graph, _, metadata = load_trained(tmp_path / "hgnn")
+
+    assert metadata["data"] == "/corax/output/gateway/data"
+    assert loaded_graph.node_ids == graph.node_ids
 
 
 def test_loading_needs_the_data_folder(exported):
