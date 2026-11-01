@@ -1,4 +1,5 @@
 # Scripts
+<div align="justify">
 
 How to prepare data, train the model, evaluate it and run the demo scripts without Docker. Run every
 command from the repository root.
@@ -279,3 +280,4 @@ The endpoint returns a risk score, indicates whether it exceeds the configured t
 
 The same flow (prepare, `python -m hgnn`, evaluate) runs on the Amazon Access Samples dataset and the
 Xu & Stoller ABAC policies. Read [scripts](scripts.md#scripts) and [evaluation](ai-model-and-evaluation.md#evaluation).
+</div>

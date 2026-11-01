@@ -1,5 +1,5 @@
 # AI Model and Evaluation
-
+<div align="justify">
 How Corax scores a request, how it turns an approved appeal into candidate rules, and how both were evaluated.
 
 ## Risk score
@@ -248,3 +248,4 @@ The Xu & Stoller rules are all large because each grants more than 50 pairs, and
 * Xu & Stoller: [Scripts - Xu & Stoller](scripts.md#xu--stoller-abac-policies). The `.abac` files are GPL-3.0 and are not part of this repository.
 * Amazon: [Scripts - Amazon](scripts.md#amazon-dataset).
 * Dummy data: [Small test data](scripts.md#small-test-data).
+</div>
