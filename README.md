@@ -95,7 +95,7 @@
   Corax can be deployed in 2 ways, and the demo uses both:
 
   - **As a sidecar:** A sidecar runs alongside an application and handles tasks that would otherwise need to be built into the application itself. In this setup, Envoy sits in front of the API and checks every incoming request with OPA before forwarding it to the application. This means the application does not need to handle access checks on its own.
-  - **As a policy decision point (PDP):** TIn this approach, OPA makes the access decision, while the application remains responsible for enforcing it. The application sends OPA a request asking whether a user is allowed to perform a particular action, then follows the decision it receives. In the demo, the document application uses this approach to show users only the documents they are allowed to access.
+  - **As a policy decision point (PDP):** In this approach, OPA makes the access decision, while the application remains responsible for enforcing it. The application sends OPA a request asking whether a user is allowed to perform a particular action, then follows the decision it receives. In the demo, the document application uses this approach to show users only the documents they are allowed to access.
 
   ### How the Corax AI fits in
 
