@@ -7,8 +7,8 @@ To run the demo, Docker is all you need:
 - **Free ports** 8080 (the document app) and 8090 (the Corax console), or other ones ([Settings](#settings)).
 - **About 2.5 GB of disk** for the images.
 
-To develop, test or run the scripts without Docker, also need:
-- **Python 3.11** or newer.
+To develop, test or run the scripts without Docker, you also need:
+- **Python 3.11** or newer, with PyTorch, PyTorch Geometric and the packages in the `requirements.txt` files. The commands are in [Develop without Docker](#develop-without-docker).
 - **The [OPA binary](https://www.openpolicyagent.org/docs/latest/#running-opa)**, for the policy tests and the appeal scripts.
 - **Node.js 22.12** or newer, only to work on the document app's web frontend.
 
