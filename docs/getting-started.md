@@ -3,10 +3,9 @@
 <div align="justify">
 
 To run the demo, Docker is all you need:
-
 - **Docker**: Docker Desktop (Windows, macOS) or Docker Engine with the compose plugin (Linux).
 - **Free ports** 8080 (the document app) and 8090 (the Corax console), or other ones ([Settings](#settings)).
-- **About 2.5 GB of disk** for the images. Most of it is PyTorch, used once to train the model.
+- **About 2.5 GB of disk** for the images.
 
 To develop, test or run the scripts without Docker, also need:
 - **Python 3.11** or newer.
