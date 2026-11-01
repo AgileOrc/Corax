@@ -40,7 +40,7 @@ and denies the request if the score exceeds the threshold.
 ### What the Demo Shows
 
 [2.1. Policy enforcement and resistance to object enumeration (BOLA)](#21-policy-enforcement)</br>
-[2.2. The AI risk check on requests the policy allows](#22-the-ai-risk-check)</br>
+[2.2. The Corax risk check on requests the policy allows](#22-the-ai-risk-check)</br>
 [2.3. Turning one approval into a rule for comparable employees](#23-narrow-rules)</br>
 [2.4. A second confirmation for rules with a large scope](#24-broad-rules)</br>
 [2.5. Rejection with a note to the employee](#25-rejecting-a-request)</br>
@@ -161,12 +161,12 @@ document.
 missing one, which prevents enumeration of document identifiers, the core of Broken Object Level Authorization
 (BOLA).
 
-### 2.2 The AI Risk Check
+### 2.2 The Corax Risk Check
 
 **Objective:** Show that the AI blocks requests the policy allows when they do not fit the user's normal access.
 
 The preview rule is intentionally too broad. Every employee may preview every document, so the policy allows all
-previews and the AI risk check becomes the deciding layer.
+previews and the Corax risk check becomes the deciding layer.
 
 1. As **`e040`**, click **Preview** on **D040**.
 2. Click **Preview** on **D133**.
@@ -337,7 +337,7 @@ docker compose -f deploy/docker-compose.yml run --rm demo scripts/demo_gateway.p
 ```
 
 The script sends 26 named requests, resolves ten appeals through the Corax API as the administrator, and applies the expected rule for each appeal.
-It then sends the same requests again and displays the AI risk score and result for each request, both before and after the appeals.
+It then sends the same requests again and displays the Corax risk score and result for each request, both before and after the appeals.
 
 **Expected result**: Requests from employees who submitted appeals, as well as requests from their colleagues covered by the new rules, change from 403 to 200. 
-BOLA attempts remain denied with 403. Requests allowed by a new rule but considered unusual by the AI risk check also remain denied with 403.
+BOLA attempts remain denied with 403. Requests allowed by a new rule but considered unusual by the Corax risk check also remain denied with 403.
