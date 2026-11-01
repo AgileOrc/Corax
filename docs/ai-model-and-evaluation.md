@@ -1,5 +1,5 @@
 # AI Model and Evaluation
-
+<div align="justify">
 How Corax scores a request, how it turns an approved appeal into candidate rules, and how both were evaluated.
 
 ## Risk score
@@ -10,7 +10,7 @@ The model is Corax's own implementation of the heterogeneous graph method in [\[
 
 ### What Corax adds
 
-*   **The decoder is the risk score.** No separate classifier is trained on top of the embeddings. The dot product the model was trained with gives the risk of user _u_ reading object _o_:
+*   **The decoder is the risk score.** The dot product the model was trained with gives the risk of user _u_ reading object _o_:
 
     $$
     \mathrm{risk}(u, o) = 1 - \sigma\left(\mathbf{h}_u^{T} \mathbf{h}_o\right),
@@ -26,7 +26,7 @@ The model is Corax's own implementation of the heterogeneous graph method in [\[
 
 ### Graph
 
-Corax is not tied to one domain. It reads typed nodes and typed edges from two CSV files ([data format](scripts.md#data-format)). One edge type is the target. For the demo company used in these docs, whose employees read documents:
+Corax is designed to work across different domains rather than being tied to a specific use case. It takes structured data in the form of typed nodes and typed edges from two CSV files ([see the data format](scripts.md#data-format)). One of the edge types is selected as the target relationship. In the demo, we use a company scenario where employees access documents:
 
 | Amazon dataset         | Example company                                              |
 | ---------------------- | ------------------------------------------------------------ |
@@ -36,7 +36,7 @@ Corax is not tied to one domain. It reads typed nodes and typed edges from two C
 | `title`                | `role` (`role_coordinator`, `role_engineer`)                 |
 | `has_potential_access` | `accessed` (employee → document, from allowed requests only) |
 
-A role is a node, not an attribute, so the graph contains the path `employee --> role --> employee` ("both are coordinators"). This is what lets the model see that two coordinators are similar.
+A role is a node, so the graph contains the path `employee --> role --> employee` ("both are coordinators"). This is what lets the model see that two coordinators are similar.
 
 ### Model and training
 
@@ -55,14 +55,12 @@ Training is full-batch, because the graphs fit in memory and `LinkNeighborLoader
 Node inputs are learned per node (transductive). A new user or object only gets an embedding after retraining. Until then `/risk` returns no score and the policy decision stands.
 
 ### From embeddings to risk
-
+We use the dot product here:
 ```
 p     = σ(h_user · h_object)     how likely this user is to be connected to this object
 risk  = 1 − p
 deny  when risk > threshold
 ```
-
-The dot product is used, not cosine, because the model was trained with it.
 
 **Threshold.** The risk below which 99% of the real access in the validation split falls (`--target-pass-rate 0.99`, about 1% false deny). It is an operating choice. `scripts/evaluate/evaluate_hgnn.py` prints false deny and detection on the test split for 95%, 98%, 99%, 99.5% and 99.9%. The value is stored in `metadata.json` and can be overridden with `AI_RISK_THRESHOLD`. Scores are deterministic, so a legitimate pair that is denied is denied every time and can be resolved once through an appeal.
 
@@ -85,8 +83,8 @@ A user is denied, an admin decides they should have access. The appellant gets a
 4. Corax computes the scope of the chosen rule, which is its share of users, new pairs and mean risk.
 5. A small rule continues. A large one returns 409, with the users who would gain access, until the admin confirms again with `acknowledge_scope`. The admin can also keep only the exception.
 6. The rule is written as Rego from a fixed template and validated (syntax, whitelist, the application's tests, equivalence with the pattern). A rule that fails is not written.
-7. The file is written atomically to `policies/generated/`. OPA, which watches the folder, loads it within milliseconds.
-8. A snapshot of who gained access to what is written next to the appeal record.
+7. The file is written atomically to `policies/generated/`. OPA loads it within milliseconds.
+8. A history/log of who gained access to what is written next to the appeal record.
 
 **Afterwards: every use is logged.** The users in the snapshot reach their new resources without another approval. Each time they do, the service logs it. OPA's `/risk` call shows the pair, and for the appellant's exception, which skips `/risk`, OPA calls `/usage`. `GET /corax/rules` shows every rule in effect, who gained access and how it was used, in plain language. `GET /corax/me/access` shows a user the resources they can reach through appeals.
 
@@ -250,3 +248,4 @@ The Xu & Stoller rules are all large because each grants more than 50 pairs, and
 * Xu & Stoller: [Scripts - Xu & Stoller](scripts.md#xu--stoller-abac-policies). The `.abac` files are GPL-3.0 and are not part of this repository.
 * Amazon: [Scripts - Amazon](scripts.md#amazon-dataset).
 * Dummy data: [Small test data](scripts.md#small-test-data).
+</div>

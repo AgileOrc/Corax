@@ -1,15 +1,10 @@
 # Getting Started
-
-What you need, how the repository is organized, and how to run Corax with Docker. Run every command from the
-repository root. Once the stack is up, [running the demo](demo.md) walks through it.
-
 ## Prerequisites
+<div align="justify">
 
 To run the demo, Docker is all you need:
 
-- **Docker**: Docker Desktop (Windows, macOS) or Docker Engine with the compose plugin (Linux). Check with
-  `docker compose version`. With the older standalone tool, write `docker-compose` wherever this guide says
-  `docker compose`.
+- **Docker**: Docker Desktop (Windows, macOS) or Docker Engine with the compose plugin (Linux).
 - **Free ports** 8080 (the document app) and 8090 (the Corax console), or other ones ([Settings](#settings)).
 - **About 2.5 GB of disk** for the images. Most of it is PyTorch, used once to train the model.
 
@@ -31,7 +26,7 @@ To develop, test or run the scripts without Docker, also need:
 | `tests/` | Tests for the service, the model, the scripts and the demo app | Changing the code |
 | `docs/` | This documentation | Always |
 
-</br>2 folders are created on your machine:
+</br>2 folders will be created on your machine:
 - `output/` holds prepared data and trained models,
 - `datasets/` holds public datasets you download yourself.
 
@@ -171,3 +166,4 @@ Then open http://localhost:5173.
 
 Preparing data, training the model and the demo scripts are in [Scripts](scripts.md).
 </br> Go to [next page (demo)](demo.md)
+</div>

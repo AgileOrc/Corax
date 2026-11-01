@@ -1,4 +1,4 @@
-# Table of contents
+# Table of Contents
 
 * [Corax Documentation](README.md)
 * [Getting Started](getting-started.md)

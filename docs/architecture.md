@@ -1,8 +1,13 @@
+<div align="justify">
 # Architecture
 
-Corax is deployed in front of an application and authorizes every request made to it. The system has an online part, which evaluates requests and processes appeals, and an offline part, which trains the graph model that the online part reads.
+Corax sits between users and an application, evaluating every request before access is granted. Its architecture consists of two main parts: an online component that handles access requests and appeals, and an offline component that trains the graph model used by the online system.
 
-The design rests on three principles, detailed under [Security](architecture.md#security). Policy code is the only source of allow decisions. The AI can only turn an allow into a deny. Every rule produced by an appeal is validated before it takes effect, recorded together with the access it grants and every later use of that access, and revoked by deleting its file.
+The architecture is built around three key security principles, which are explained in more detail in [Security](architecture.md#security):
+
+1. **Policy code remains the source of all access grants:** Only existing policies can authorize access, the AI model cannot grant permissions.
+2. **AI can only restrict access, never grant it:** It provides an additional layer of analysis by turning requests that would otherwise be allowed into denials when they appear risky.
+3. **Every policy change is validated and traceable:** Rules generated from approved appeals must pass validation before taking effect. Corax also records each rule, the access it grants, and every subsequent use of that access. If a rule needs to be revoked, its file can simply be deleted.
 
 ## Components
 
@@ -19,9 +24,9 @@ The design rests on three principles, detailed under [Security](architecture.md#
 
 Corax separates the authorization decision from its enforcement. OPA, loaded with the Corax policy framework and backed by the risk service, acts as the policy decision point (PDP). The policy enforcement point (PEP) can be deployed in two ways.
 
-**Gateway enforcement (sidecar).** Envoy is deployed in front of the protected API and consults OPA through its `ext_authz` filter for every inbound request. Requests are authorized before they reach the application, which therefore carries no authorization logic of its own. In the demo, every call to the document application takes this path.
+- **Gateway enforcement (sidecar):** Envoy is deployed in front of the protected API and consults OPA through its `ext_authz` filter for every inbound request. Requests are authorized before they reach the application, which therefore carries no authorization logic of its own. In the demo, every call to the document application takes this path.
 
-**Application enforcement (direct PDP queries).** A gateway or service queries the OPA REST API and enforces the decision itself. `POST /v1/data/corax/authz/allowed_objects`, for example, reduces a collection to the objects a subject is permitted to access. The demo's document application uses this query to scope its catalog.
+- **Application enforcement (direct PDP queries):** A gateway or service queries the OPA REST API and enforces the decision itself. `POST /v1/data/corax/authz/allowed_objects`, for example, reduces a collection to the objects a subject is permitted to access. The demo's document application uses this query to scope its catalog.
 
 Both modes evaluate the same policy, including the rules generated from appeals. The `allowed_objects` query evaluates the policy only and does not invoke the risk service, because it filters a collection rather than authorizing access to a single object. The risk check is applied when the subject subsequently retrieves an object through Envoy. A service that queries OPA directly is responsible for enforcing the decision, and OPA must be reachable only from the internal network.
 
@@ -391,11 +396,9 @@ opa test policy -v
 * `GET /corax/me/access` lists only access from appeals, not access from the application's own rules.
 
 ### Future work
-
-The first three items are the priorities.
-
 1. **More policy languages and gateways:** The graph, the risk score and the appeal flow are independent of Rego and of Envoy. Only the rule writer, its validation and the enforcement point are tied to them. Supporting other policy languages, such as Cedar or XACML, and other enforcement points, such as Kong, NGINX, Traefik or cloud API gateways, would let Corax protect applications that already standardize on them.
 2. **Hierarchy depth in the tier:** Organizations often arrange units, sites or categories in a tree. The depth at which a rule applies, its distance from the root, indicates how far it reaches. A rule scoped to a team is narrower than one scoped to a division. Adding this depth to the tier computation, next to the share of users, the new pairs and the mean risk, would separate narrow and broad rules more reliably where such a tree exists.
 3. **Lattice-based reasoning alongside the graph:** Candidate rules are currently derived from the graph and ordered by the access they open. Arranging attribute combinations in a concept lattice, where each rule generalizes the rules below it, would make that ordering explicit. It would let Corax move up or down from an approved rule one step at a time, and present the next more general rule together with exactly what it adds. Classification levels form a lattice of their own, which would let a rule respect clearance ordering rather than individual levels.
 4. **Shadow mode for generated rules:** A rule could first run in observation only, recording which requests it would allow without allowing them. The administrator would apply it after reviewing real traffic rather than a prediction.
 5. **Explanations for risk decisions:** The administrator sees a risk score but not its cause. Showing the peers and relations that drove a high score, for example that none of the user's closest peers open the object, would make AI denials easier to review and dispute.
+</div>

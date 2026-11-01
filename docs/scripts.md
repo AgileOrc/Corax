@@ -1,4 +1,5 @@
 # Scripts
+<div align="justify">
 
 How to prepare data, train the model, evaluate it and run the demo scripts without Docker. Run every
 command from the repository root.
@@ -138,9 +139,7 @@ python scripts/evaluate/evaluate_knn.py --runs "output/xu-stoller/*/rule_*" --ou
 The `ir-gen-case-studies` folder holds the same policies with irrelevant attributes added, for a noise test.
 
 ## Data format
-
-Corax does not know about any specific domain. Any application (a company, a hospital, a shop)
-describes its users, objects and relations as a typed graph in two CSV files.
+All user information, including roles, accessible objects or resources, and their relationships, must be represented as a graph and organized into two CSV files: `nodes.csv` and `edges.csv`.
 
 ### nodes.csv
 
@@ -266,20 +265,19 @@ shows everything else and says the validation was skipped. Pass `--opa path/to/o
 How appeals work is in [Appeal path](ai-model-and-evaluation.md#appeal-path).
 
 ### The risk endpoint as OPA calls it
-
+Start the Corax risk service with the following command:
 ```bash
 CORAX_MODEL_DIR=output/gateway/hgnn uvicorn main:app --app-dir service --port 8000
 ```
-
+You can then send a POST request to /risk to evaluate the risk associated with a user accessing a specific object:
 ```bash
 curl -X POST localhost:8000/risk -H "Content-Type: application/json" -d '{"user": "employee_E049", "object": "document_D057"}'
 ```
 
-The answer has the risk, whether it is above the threshold, and the threshold. Every user and object id is in
-`output/gateway/hgnn/node_ids.json`. `/risk` uses the embeddings of the whole graph, so its numbers differ
-slightly from `demo_risk.py`, which recomputes them without the test edges.
+The endpoint returns a risk score, indicates whether it exceeds the configured threshold, and includes the threshold value used for the evaluation. All valid user and object IDs can be found in `output/gateway/hgnn/node_ids.json`. The `/risk` endpoint calculates risk using embeddings generated from the full graph. As a result, its scores may differ slightly from those produced by `demo_risk.py`, which recomputes the embeddings without the test edges.
 
 ### Larger datasets
 
 The same flow (prepare, `python -m hgnn`, evaluate) runs on the Amazon Access Samples dataset and the
 Xu & Stoller ABAC policies. Read [scripts](scripts.md#scripts) and [evaluation](ai-model-and-evaluation.md#evaluation).
+</div>
