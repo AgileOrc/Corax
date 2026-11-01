@@ -146,6 +146,8 @@
   | 4 | [AI model and evaluation](docs/ai-model-and-evaluation.md) | How the model works, and how the numbers above were measured |
   | 5 | [Scripts](docs/scripts.md) | Preparing data, training the model, and the demo scripts |
   | 6 | [References](docs/references.md) | The research Corax builds on |
+  
+  Changes between versions are listed in the [changelog](CHANGELOG.md).
 
   ## License
 
