@@ -11,7 +11,7 @@
 
 <div align="justify">
   Corax is an open-source access control system for web APIs. It decides who may open what inside an organization, combining the rules the organization writes with an AI model that learns how people actually work. <br>
-  Most organizations rely on fixed rules to manage access, for example allowing engineers to open engineering files. While these rules define who can access which resource, they don't always reflect how people actually work. This can lead to unusual access requests going unnoticed or legitimate requests being blocked simply because existing policies don't anticipate these situations. <br>
+  Most organizations rely on fixed rules to manage access. While these rules define who can access which resource, they don't always reflect how people actually work. This can lead to unusual access requests going unnoticed or legitimate requests being blocked simply because existing policies don't anticipate these situations. <br>
   Corax adds another layer of analysis to access control. Beyond checking whether a request is permitted by existing policies, it examines whether the request aligns with what users in similar roles and situations typically access. This helps identify unusual access patterns that traditional rules might miss.
 
   ## Demo
