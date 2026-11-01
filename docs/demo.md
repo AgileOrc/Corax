@@ -1,8 +1,8 @@
 # Running the Demo
 
-This guide walks through Corax protecting a document management application. It shows each capability in
-isolation, the steps to reproduce it, and the result to expect. Start the stack first, as described in
-[Getting Started](getting-started.md).
+This demo shows how Corax protects a document management application. It covers the main features, how 
+to reproduce each scenario, and what to expect from the results. Before starting, make sure the stack is 
+running as described in [Getting Started](getting-started.md).
 
 ## Overview
 
@@ -52,10 +52,10 @@ and denies the request if the score exceeds the threshold.
 
 | Mode | Use it to |
 |---|---|
-| [1. Automated case log](#1-automated-case-log) | Verify every path in one run, with full technical detail |
-| [2. The document application](#2-the-document-application) | Present Corax as users experience it |
-| [3. The Corax console](#3-the-corax-console) | Inspect decisions and generated policy without the application |
-| [4. Before and after comparison](#4-before-and-after-comparison) | Show the effect of the appeals on a fixed set of requests |
+| [1. Automated case log](#1-automated-case-log) | Run all test cases and inspect the results and technical details |
+| [2. The document application](#2-the-document-application) | See how Corax works from an employee's or administrator's perspective |
+| [3. The Corax console](#3-the-corax-console) | Inspect access decisions and generated policies without using the document application |
+| [4. Before and after comparison](#4-before-and-after-comparison) | Compare the results of the same requests before and after appeals are resolved |
 
 ### Starting From a Clean State
 
@@ -69,13 +69,16 @@ docker compose -f deploy/docker-compose.yml up -d
 
 ## 1. Automated Case Log
 
+Run the following command:
 ```bash
 docker compose -f deploy/docker-compose.yml run --rm demo
 ```
 
-The command plays 57 cases against the application, in the order people would perform them, and records every
-step of each one. That includes the HTTP requests, OPA's reason, the AI risk score, the candidate rule and its
-scope, the Rego that was written, and the time OPA took to load it. Append `> demo-log.txt` to save the output.
+This command runs 57 cases against the application in the order they would normally occur. Each case records 
+the steps involved, including HTTP requests, OPA's decision, the AI risk score, the proposed rule and its scope, 
+the generated Rego file, and the time OPA takes to reload it.
+
+To save the output to a file, append `> demo-log.txt` to the command.
 
 | Part | Cases | Coverage |
 |---|---|---|
@@ -112,11 +115,14 @@ Case 31: Engineering coordinator asks for an Engineering document (employee_E049
   after   : GET /documents/document_D070 as employee_E085 -> 200 (allowed, risk 0.0271)
 ```
 
-The log refers to tiers as small and large, which the application presents as narrow and broad. A summary of all 57
-cases closes the run, each marked `ok` or `FAIL`, and the command exits with code 1 if any case deviates from its
-expectation. Cases fail on a stack that was used before, so reset it first.
+The log uses the terms small and large for rule tiers. These correspond to narrow and broad in the application interface.
 
-The `demo` container reads the logs of Envoy and OPA through the Docker socket. Run it only on your own machine.
+At the end of the run, the command prints a summary of all 57 cases. Each case is marked `ok` or `FAIL`. 
+If any case produces a result that differs from its expected outcome, the command exits with code 1.
+
+Cases may fail if the stack has already been used. Reset it before running the demo.
+
+The `demo` container reads Envoy and OPA logs through the Docker socket. For this reason, run it only on your own machine.
 
 ## 2. The Document Application
 
@@ -311,27 +317,27 @@ holds.
 
 ## 3. The Corax Console
 
-**http://localhost:8090** exposes Corax without the document application. It acts as the identity provider, so you
-choose the identity and the console signs the token.
+The Corax console is available at **http://localhost:8090**. It provides access to Corax without using the document application.
+
+The console also acts as the identity provider. You select an identity, and the console signs the token for that user.
 
 | Section | Purpose |
 |---|---|
-| **Sign in as** | Choose an administrator or an employee, grouped by role |
-| **Read a document** | Send a request through Envoy and OPA, and see the decision, OPA's reason and the AI risk score |
-| **Approve an appeal** | As the administrator, apply the exact exception, then choose a candidate rule, confirm a broad scope, or keep only the exception |
-| **Policy added on top of the application rules** and **Corax activity** | Inspect the generated Rego files and the history of every appeal |
+| **Sign in as** | Select an administrator or employee from a list grouped by role. |
+| **Read a document** | Send a request through Envoy and OPA, then inspect the access decision, OPA's reason, and the AI risk score. |
+| **Approve an appeal** | As an administrator, grant the exact exception and then select a candidate rule, confirm a broad rule, or keep the exception only. |
+| **Policy added on top of the application rules** and **Corax activity** | View generated Rego files and the history of all appeals. |
 
 ## 4. Before and After Comparison
 
-On a clean stack:
+Start with a clean stack, then run:
 
 ```bash
 docker compose -f deploy/docker-compose.yml run --rm demo scripts/demo_gateway.py run --gateway http://envoy:8080
 ```
 
-The script sends 26 named requests, resolves ten appeals as the administrator through Corax's API, each with the rule
-it expects, and sends the same requests again. It prints each request's AI risk score and its result before and after
-the appeals.
+The script sends 26 named requests, resolves ten appeals through the Corax API as the administrator, and applies the expected rule for each appeal.
+It then sends the same requests again and displays the AI risk score and result for each request, both before and after the appeals.
 
-**Expected result:** Appellants and their colleagues move from 403 to 200. BOLA attempts remain 403. Accesses that a
-new rule opens but the AI considers unusual also remain 403.
+**Expected result**: Requests from employees who submitted appeals, as well as requests from their colleagues covered by the new rules, change from 403 to 200. 
+BOLA attempts remain denied with 403. Requests allowed by a new rule but considered unusual by the AI risk check also remain denied with 403.
