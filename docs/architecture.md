@@ -141,7 +141,7 @@ Then recreate the service with `docker compose -f deploy/docker-compose.yml up -
 AUTO_APPLY_MAX_USER_SHARE=0.5 CORAX_MODEL_DIR=output/gateway/hgnn uvicorn main:app --app-dir service --port 8000
 ```
 
-The document application demo sets `AUTO_APPLY_MAX_USER_SHARE` to `0.06` in `deploy/docker-compose.yml`, which corresponds to 5 of its model's 86 employees. [Running the Demo](demo.md) assumes that limit. Under other limits, an appeal may fall into a different tier.
+The document application demo sets `AUTO_APPLY_MAX_USER_SHARE` to `0.06` in `deploy/docker-compose.yml`, which corresponds to 5 of its model's 180 employees. [Running the Demo](demo.md) assumes that limit. Under other limits, an appeal may fall into a different tier.
 
 Appeals require `graph.json` and `access.json` in the model folder. Without them, only `/risk` is available.
 
